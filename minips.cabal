@@ -23,5 +23,7 @@ executable minips
                      , binary
                      , containers
                      , mtl
-                     , convertible
+                     , rainbow
+                     , text
+                     , time
   ghc-options:       -O2 -Wall

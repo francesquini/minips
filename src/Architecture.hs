@@ -7,12 +7,9 @@ import Data.List
 import Data.Bits
 import Data.Int
 import Data.Word
-import Numeric
+import Utils
 
-import Debug.Trace
-
-
-data Endianness = Big | Little
+data Endianness = Big | Little deriving Eq
 
 data RegName =
   -- General purpose registers
@@ -30,6 +27,7 @@ data RegName =
   | Ra
   -- Specific registers
   | Pc
+  | Hlt
   deriving (Enum)
 
 instance Show RegName where
@@ -68,6 +66,7 @@ instance Show RegName where
       Fp -> "$fp"
       Ra -> "$ra"
       Pc -> "$pc"
+      Hlt -> "$hlt"
 
 w2reg :: Word8 -> RegName
 w2reg = toEnum . fromIntegral
@@ -123,7 +122,6 @@ instance Show ShowBox where
   show (Bx s) = show s
 
 showBox :: InstrWord -> [ShowBox]
-showBox Syscall                  = []
 showBox (RInstr JR rs _  _  _)   = [Bx JR,  Bx rs]
 showBox (RInstr SLL _ rt rd sa)  = [Bx SLL, Bx rd, Bx rt, Bx sa]
 showBox (RInstr SRL _ rt rd sa)  = [Bx SRL, Bx rd, Bx rt, Bx sa]
@@ -134,12 +132,14 @@ showBox (IInstr BEQ rs rt w)     = [Bx BEQ, Bx rs, Bx rt, Bx w]
 showBox (IInstr BNE rs rt w)     = [Bx BNE, Bx rs, Bx rt, Bx w]
 showBox (IInstr SB  rs rt w)     = [Bx SB,  Bx rs, Bx rt, Bx w]
 showBox (IInstr SH  rs rt w)     = [Bx SH,  Bx rs, Bx rt, Bx w]
-showBox (IInstr SW  rs rt w)     = [Bx SH,  Bx rs, Bx rt, Bx w]
 showBox (IInstr i   rs rt w)     = [Bx i,   Bx rt, Bx rs, Bx w]
 
-showBox (JInstr i         w)     = [Bx i, Bx w]
+showBox _ = []
 
 instance Show InstrWord where
+  show (JInstr i w) = let w' = w `shiftL` 2 in show i <> " 0x" <> showHex w " # 0x" <> showHex w' ""
+  show (IInstr SW rs rt w) = show SW <> " " <> show rt <> ", 0x" <> showHex w "(" <> show rs <> ")"
+  show (IInstr LW rs rt w) = show LW <> " " <> show rt <> ", 0x" <> showHex w "(" <> show rs <> ")"
   show Syscall = "SYSCALL"
   show iw = ins <> " " <> intercalate ", " ops
     where
@@ -168,7 +168,7 @@ getRdR = w2reg . getRd
 
 decodeRType :: Word32 -> InstrWord
 decodeRType w =
-  trace ("decodeRType: " ++ show ins)
+  -- trace ("decodeRType: " ++ show ins)
   ins
   where
     ins = if funct == 0x0c
@@ -188,7 +188,7 @@ decodeRType w =
       0x02 -> SRL
       0x22 -> SUB
       0x23 -> SUBU
-      _    -> error $  "Instrução tipo R não reconhecida. Funct: " ++ show funct
+      _    -> error $  "Instrução tipo R não reconhecida. Funct: " ++ show funct ++ " Word: " ++ showHex w ""
 
 decodeJType :: Word32 -> InstrWord
 decodeJType w
@@ -201,7 +201,7 @@ decodeJType w
 
 decodeIType :: Word32 -> InstrWord
 decodeIType w =
-  trace ("decodeIType: " ++ show ins)
+  -- trace ("decodeIType: " ++ show ins ++ (" op: 0x" ++ showHex op "")) $
   ins
   where
     ins = IInstr instr (getRsR w) (getRtR w) (getImmediate w)
@@ -222,11 +222,11 @@ decodeIType w =
       0x28 -> SB
       0x29 -> SH
       0x2b -> SW
-      _    -> error $ "Instrução tipo I não reconhecida. Opcode: " ++ show op
+      _    -> error $ "Instrução tipo I não reconhecida. Opcode: " ++ show op ++ " Word: 0x" ++ showHex w ""
 
 decodeInstr :: Word32 -> InstrWord
 decodeInstr w =
-  trace ("Decodificando instrução: 0x" ++ showHex w "") $
+  -- trace ("Decodificando instrução: 0x" ++ showHex w "") $
   case getOpcode w of
     -- R-Type
     0x00 -> decodeRType w

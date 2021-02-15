@@ -1,19 +1,16 @@
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
-
 module Main where
 
-import Architecture
+import Architecture (Endianness (Big, Little), decodeInstr)
 import Emulator
+import Utils
 
 import System.Environment
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as B
 import Data.Binary.Get
 import Data.Word
-
+import Data.Time.Clock
+import Text.Printf
 
 readWordFun :: Endianness -> Get Word32
 readWordFun Big   = getWord32be
@@ -29,15 +26,27 @@ listOfWord32 gwf = do
 getWords :: Endianness -> ByteString -> [Word32]
 getWords e = runGet (listOfWord32 (readWordFun e))
 
+usage :: IO ()
+usage = print "Use: minips run arquivo / minips decode arquivo"
+
 main :: IO ()
 main = do
-  args <- getArgs
-  let fileName = head args
+  [opt, fileName] <- getArgs
+  let end = Little
   txt0 <- B.readFile $ fileName <> ".text"
   dt0  <- B.readFile $ fileName <> ".data"
-  let txt = getWords Little txt0
-      dt  = getWords Little dt0
-  -- mapM_ print (map (`showHex` "")  wrd)
-  let instr = map decodeInstr txt
-  mapM_ print instr
-  simulate txt dt
+  let txt = getWords end txt0
+      dt  = getWords end dt0
+  if opt == "decode" then do
+    let instr = map decodeInstr txt
+    mapM_ print instr
+  else if opt == "run" then do
+    t0 <- getCurrentTime
+    (r, i, j) <- simulate end txt dt
+    let totIns = r + i + j
+    t1 <- getCurrentTime
+    glog "--------------------------"
+    glog $ printf "Instruction count: %d (R: %d I: %d J: %d)" totIns r i j
+    glog $ "IPS: " ++ show (fromIntegral totIns / diffUTCTime t1 t0)
+  else
+    usage
