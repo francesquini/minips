@@ -22,14 +22,13 @@ countInstruction Syscall  = incRICount
 runInstruction :: InstrWord -> MinipsST ()
 runInstruction i = do
   countInstruction i
-  -- trace ("RUNNING " <> show icount <> ": "<> show i) $
   runInstruction' i
 
 runInstruction' :: InstrWord -> MinipsST ()
 runInstruction' (RInstr i rs rt rd sa) = do
   incPC
-  rsv <- regVal rs
-  rtv <- regVal rt
+  rsv <- regRead rs
+  rtv <- regRead rt
   case i of
     ADD ->
       rd !< rsv + rtv
@@ -59,9 +58,9 @@ runInstruction' (RInstr i rs rt rd sa) = do
       error "Unknown R-Type Instruction"
 runInstruction' (IInstr i rs rt im) = do
   incPC
-  rsv <- regVal rs
-  rtv <- regVal rt
-  pcv <- regVal Pc
+  rsv <- regRead rs
+  rtv <- regRead rt
+  pcv <- regRead Pc
   case i of
     ADDI ->
       rt !< rsv + signExtend im
@@ -70,10 +69,8 @@ runInstruction' (IInstr i rs rt im) = do
     ANDI ->
       rt !< rsv .&. zeroExtend im
     BEQ ->
-      -- trace ("Rodando BEQ (PC @ 0x" <> showHex pcv "). Condição " <> show (rsv == rtv) <> " alvo 0x" <> (showHex (pcv + (zeroExtend im `shiftL` 2) ) "")) $
       when (rsv == rtv) $ Pc !<  pcv + (signExtend im `shiftL` 2)
     BNE ->
-      -- trace ("Rodando BNE. Condição " <> show (rsv /= rtv) <> " alvo 0x" <> (showHex (pcv + (zeroExtend im `shiftL` 4) - 4) "")) $
       when (rsv /= rtv) $ Pc !<  pcv + (signExtend im `shiftL` 2)
     LBU ->
       liftIO $ notImplemented "LBU"
@@ -82,7 +79,7 @@ runInstruction' (IInstr i rs rt im) = do
     LUI ->
       rt !< (zeroExtend im `shiftL` 16 :: Word32)
     LW -> do
-      mval <- memVal (rsv + signExtend im)
+      mval <- memRead (rsv + signExtend im)
       rt !< mval
     ORI ->
       rt !< fromIntegral rsv .|. (fromIntegral im :: Word32)
@@ -107,20 +104,17 @@ runInstruction' (JInstr i addr) = do
   let adShifted = addr `shiftL` 2
   case i of
     J   -> do
-      -- trace ("J 0x" <> showHex adShifted "") (return ())
       Pc !< adShifted
     JAL -> do
-      pcv <- regVal Pc
-      -- trace ("JAL 0x" <> showHex adShifted " era: 0x" <> showHex addr "") (return ())
+      pcv <- regRead Pc
       Ra  !< pcv + 4
       Pc  !< adShifted
     _   ->
       error "Unknown J-Type Instrucion"
 runInstruction' Syscall = do
   incPC
-  funct <- regVal V0
-  a0v   <- regVal A0
-  -- liftIO $ rlog ("Running syscall. $a0=0x" ++ showHex a0v " v0=0x" ++ showHex funct "")
+  funct <- regRead V0
+  a0v   <- regRead A0
   case funct of
     1  ->
       -- print int in $a0
@@ -158,10 +152,9 @@ runInstruction' Syscall = do
 
 runLoop :: MinipsST (Int, Int, Int)
 runLoop = do
-  pcv <- regVal Pc
-  -- trace ("\n\n# " <> show icount) (return ())
-  memVal pcv >>= runInstruction . decodeInstr
-  hltv <- regVal Hlt
+  pcv <- regRead Pc
+  memRead pcv >>= decodeInstruction >>= runInstruction
+  hltv <- regRead Hlt
   if hltv == 1
     then getCounts
     else runLoop

@@ -14,14 +14,11 @@ import Control.Monad.State.Strict
 
 type MinipsST = StateT R.Minips IO
 
-regVal :: RegName -> MinipsST Word32
-regVal regName = gets $ R.regVal regName
+regRead :: RegName -> MinipsST Word32
+regRead regName = gets $ R.regRead regName
 
-memVal :: Word32 -> MinipsST Word32
-memVal ad = gets $ R.memVal ad
-  -- v <- gets $ R.memVal ad
-  -- trace (">>>> Read M[0x" <> showHex ad "]= 0x" <> showHex v "")
-  -- (return v)
+memRead :: Word32 -> MinipsST Word32
+memRead ad = gets $ R.memRead ad
 
 readString :: Word32 -> MinipsST String
 readString ad = gets $ R.readString ad
@@ -31,17 +28,13 @@ getCounts = gets R.getCounts
 
 infixr 4 !<
 (!<) :: Integral32 a => RegName -> a -> MinipsST ()
-(!<) r v =
-  -- trace (">>>>" <> show r <> " = 0x" <> showHex v "") $
-  modify $ R.updateRegister r v
+(!<) r v = modify $ R.regWrite r v
 
-memWrite :: Word32 -> Word32 -> MinipsST()
-memWrite addr value = -- do
-  modify $ R.updateMemory addr value
-  -- nval <- gets $ R.memVal addr
-  -- trace (">>>>W M[0x" <> showHex addr "]= 0x" <> showHex value
-  --        " (Read: 0x" <> showHex nval ")")
-  --   return()
+memWrite :: Word32 -> Word32 -> MinipsST ()
+memWrite addr value = modify $ R.memWrite addr value
+
+decodeInstruction :: Word32 -> MinipsST InstrWord
+decodeInstruction w = state $ R.decodeInstruction w
 
 incPC :: MinipsST ()
 incPC = modify R.incPC

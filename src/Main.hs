@@ -1,6 +1,7 @@
 module Main where
 
-import Architecture (Endianness (Big, Little), decodeInstr)
+import Architecture (Endianness (Big, Little))
+import InstrDecoder (disassemble)
 import Emulator
 import Utils
 
@@ -38,8 +39,7 @@ main = do
   let txt = getWords end txt0
       dt  = getWords end dt0
   if opt == "decode" then do
-    let instr = map decodeInstr txt
-    mapM_ print instr
+    putStrLn $ disassemble txt
   else if opt == "run" then do
     t0 <- getCurrentTime
     (r, i, j) <- simulate end txt dt

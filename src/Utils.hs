@@ -2,7 +2,6 @@
 
 module Utils (
     module Utils
-  , trace
   , N.showHex
   )
 where
@@ -34,7 +33,6 @@ zeroExtend i = fromIntegral (fromIntegral i :: Word16)
 
 breakWord :: Integral a => Word32 -> [a]
 breakWord w =
-  -- trace ("Quebrando 0x" <> showHex w " com retorno: " <> (show $   map maskShift [24, 16, 8, 0])) $
   map maskShift [24, 16, 8, 0]
   where
     maskShift n = fromIntegral $ ((0xFF `shiftL` n) .&. w) `shiftR` n
