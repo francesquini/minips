@@ -30,9 +30,8 @@ getWords e = runGet (listOfWord32 (readWordFun e))
 usage :: IO ()
 usage = print "Use: minips run arquivo / minips decode arquivo"
 
-main :: IO ()
-main = do
-  [opt, fileName] <- getArgs
+run :: String -> FilePath -> IO ()
+run opt fileName = do
   let end = Little
   txt0 <- B.readFile $ fileName <> ".text"
   dt0  <- B.readFile $ fileName <> ".data"
@@ -50,3 +49,12 @@ main = do
     glog $ "IPS: " ++ show (fromIntegral totIns / diffUTCTime t1 t0)
   else
     usage
+
+main :: IO ()
+main = do
+  args <- getArgs
+  if length args /= 2 then
+    usage
+  else do
+    [opt, fileName] <- getArgs
+    run opt fileName
