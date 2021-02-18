@@ -71,10 +71,6 @@ instance Show RegName where
 w2reg :: Word8 -> RegName
 w2reg = toEnum . fromIntegral
 
-type Opcode = Word8
-type Shamt  = Word8
-type Funct  = Word8
-
 data Instr =
   -- R-type
     ADD
@@ -111,6 +107,8 @@ data Instr =
   | JAL
   deriving (Show)
 
+type Shamt     = Word8
+
 data InstrWord where
   RInstr  :: Instr -> RegName -> RegName -> RegName -> Shamt -> InstrWord
   IInstr  :: Instr -> RegName -> RegName -> Int16            -> InstrWord
@@ -144,25 +142,3 @@ instance Show InstrWord where
   show iw = ins <> " " <> intercalate ", " ops
     where
       (ins:ops) = show <$> showBox iw
-
-getOpcode, getRs, getRt, getRd, getShamt, getFunct :: Word32 -> Word8
-getOpcode    w = fromIntegral $ (w .&. 0xfc000000) `shiftR` 26
-getRs        w = fromIntegral $ (w .&. 0x03e00000) `shiftR` 21
-getRt        w = fromIntegral $ (w .&. 0x001f0000) `shiftR` 16
-getRd        w = fromIntegral $ (w .&. 0x0000f800) `shiftR` 11
-getShamt     w = fromIntegral $ (w .&. 0x000007c0) `shiftR` 6
-getFunct     w = fromIntegral $ w .&. 0x0000003f
-
-getAddress :: Word32 -> Word32
-getAddress w = w .&. 0x03ffffff
-
-getImmediate :: Word32 -> Int16
-getImmediate w = fromIntegral v
-  where
-     v = (fromIntegral w .&. 0x0000ffff) :: Int32
-
-getRsR, getRtR, getRdR :: Word32 -> RegName
-getRsR = w2reg . getRs
-getRtR = w2reg . getRt
-getRdR = w2reg . getRd
-

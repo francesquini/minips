@@ -2,7 +2,8 @@ module InstrDecoder (disassemble, decodeInstruction) where
 
 import Architecture
 import Utils
-
+import Data.Bits
+import Data.Int
 import Data.Word
 
 disassemble :: [Word32] -> String
@@ -74,4 +75,26 @@ decodeIType w =
       0x28 -> SB
       0x29 -> SH
       0x2b -> SW
-      _    -> error $ "Instrução tipo I não reconhecida. Opcode: " ++ show op ++ " Word: 0x" ++ showHex w ""
+      _    ->
+        error $ "Instrução tipo I não reconhecida. Opcode: " ++ show op ++ " Word: 0x" ++ showHex w ""
+
+getOpcode, getRs, getRt, getRd, getShamt, getFunct :: Word32 -> Word8
+getOpcode    w = fromIntegral $ (w .&. 0xfc000000) `shiftR` 26
+getRs        w = fromIntegral $ (w .&. 0x03e00000) `shiftR` 21
+getRt        w = fromIntegral $ (w .&. 0x001f0000) `shiftR` 16
+getRd        w = fromIntegral $ (w .&. 0x0000f800) `shiftR` 11
+getShamt     w = fromIntegral $ (w .&. 0x000007c0) `shiftR` 6
+getFunct     w = fromIntegral $ w .&. 0x0000003f
+
+getAddress :: Word32 -> Word32
+getAddress w = w .&. 0x03ffffff
+
+getImmediate :: Word32 -> Int16
+getImmediate w = fromIntegral v
+  where
+     v = (fromIntegral w .&. 0x0000ffff) :: Int32
+
+getRsR, getRtR, getRdR :: Word32 -> RegName
+getRsR = w2reg . getRs
+getRtR = w2reg . getRt
+getRdR = w2reg . getRd

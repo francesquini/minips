@@ -49,3 +49,28 @@ notImplemented :: String -> IO ()
 notImplemented err = do
   rlog $ "Not implemented: " <> err <> ". Terminating execution."
   exitFailure
+
+
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x
+
+snd3 :: (a, b, c) -> b
+snd3 (_, x, _) = x
+
+trd3 :: (a, b, c) -> c
+trd3 (_, _, x) = x
+
+class TriFunctor f where
+  trimap :: (a -> a') -> (b -> b') -> (c -> c') -> f a b c -> f a' b' c'
+
+  map1   :: (a -> a') -> f a b c -> f a' b c
+  map1 f1 = trimap f1 id id
+
+  map2   :: (b -> b') -> f a b c -> f a b' c
+  map2 f2 = trimap id f2 id
+
+  map3   :: (c -> c') -> f a b c -> f a b c'
+  map3 f3 = trimap id id f3
+
+instance TriFunctor (,,) where
+  trimap f1 f2 f3 (a, b, c) = (f1 a, f2 b, f3 c)

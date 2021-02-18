@@ -150,16 +150,18 @@ runInstruction' Syscall = do
       liftIO $ notImplemented "SYSCALL 12"
     _  -> error ("Unknown syscall: $a0=0x" ++ showHex a0v " v0=0x" ++ showHex funct "")
 
-runLoop :: MinipsST (Int, Int, Int)
+runLoop :: MinipsST ICount
 runLoop = do
-  pcv <- regRead Pc
-  memRead pcv >>= decodeInstruction >>= runInstruction
+  regRead Pc >>=
+    memRead >>=
+    decodeInstruction >>=
+    runInstruction
   hltv <- regRead Hlt
   if hltv == 1
     then getCounts
     else runLoop
 
-simulate :: Endianness -> [Word32] -> [Word32] -> IO (Int, Int, Int)
+simulate :: Endianness -> [Word32] -> [Word32] -> IO ICount
 simulate end txt dt = do
   hSetBuffering stdout NoBuffering
   let iniMinips = makeMinips end txt dt

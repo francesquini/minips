@@ -14,18 +14,22 @@ import Data.Char
 import Data.Function ((&))
 import Data.Word
 
+type ICount = (Int, Int, Int)
+rTypeICount, iTypeICount, jTypeICount :: ICount -> Int
+rTypeICount = fst3
+iTypeICount = snd3
+jTypeICount = trd3
+
 data Minips = Minips {
     endianess      :: Endianness
   , memory         :: IntMap Word32
   , registers      :: IntMap Word32
-  , rTypeICount    :: Int
-  , iTypeICount    :: Int
-  , jTypeICount    :: Int
+  , iCount         :: ICount
   }
 
 makeMinips :: Endianness -> [Word32] -> [Word32] -> Minips
 makeMinips end txt dt =
-  Minips end mem regs 0 0 0
+  Minips end mem regs (0, 0, 0)
   where
     textAddr  = 0x00400000
     dataAddr  = 0x10010000
@@ -52,15 +56,15 @@ prettyPrint  Minips{memory=mem, registers=regs} =
     pp2 (ad, val) = unwords [showHex ad ":", showHex val ""]
 
 getCounts :: Minips -> (Int, Int, Int)
-getCounts Minips{rTypeICount=r, iTypeICount=i, jTypeICount=j} = (r, i, j)
+getCounts = iCount
 
 regRead :: RegName -> Minips -> Word32
 regRead regName st =
-  fromIntegral $ registers st IM.! fromEnum regName
+  registers st IM.! fromEnum regName
 
 memRead :: Word32 -> Minips -> Word32
 memRead ad st = assert (ad `mod` 4 == 0) $
-  fromIntegral $ IM.findWithDefault 0 (fromIntegral ad) (memory st)
+  IM.findWithDefault 0 (fromIntegral ad) (memory st)
 
 -- Accepts unaligned addresses
 -- Reads a string stores in address memAddr
@@ -94,6 +98,6 @@ incPC :: Minips -> Minips
 incPC st = regWrite Pc (regRead Pc st + 4) st
 
 incRICount, incIICount, incJICount :: Minips -> Minips
-incRICount m@Minips{rTypeICount=c} = m{rTypeICount = c + 1}
-incIICount m@Minips{iTypeICount=c} = m{iTypeICount = c + 1}
-incJICount m@Minips{jTypeICount=c} = m{jTypeICount = c + 1}
+incRICount m@Minips{iCount=c} = m{iCount = map1 (+1) c}
+incIICount m@Minips{iCount=c} = m{iCount = map2 (+1) c}
+incJICount m@Minips{iCount=c} = m{iCount = map3 (+1) c}
