@@ -16,10 +16,14 @@ import Data.Function ((&))
 import System.Exit
 
 import qualified Debug.Trace as T
+import Text.Printf
+import Data.Binary.IEEE754
 
 trace :: String -> a -> a
 trace = T.trace
 -- trace _ a = a
+
+
 
 class (Integral a, Show a) => Integral32 a
 instance Integral32 Word32
@@ -37,6 +41,24 @@ breakWord w =
   where
     maskShift n = fromIntegral $ ((0xFF `shiftL` n) .&. w) `shiftR` n
 
+words32FromDouble :: Double -> (Word32, Word32)
+words32FromDouble db =
+  (dbu, dbl)
+  where
+    db0 = doubleToWord db
+    dbu = fromIntegral $ db0 `shiftR` 32
+    dbl = fromIntegral $ db0 .&. 0xffffffff
+
+doubleFromWords32 :: Word32 -> Word32 -> Double
+doubleFromWords32 up low =
+  wordToDouble $ (w64up `shiftL` 32) .|. w64low
+  where
+    w64up  = fromIntegral up :: Word64
+    w64low = fromIntegral low :: Word64
+
+showHex32 :: Word32 -> String
+showHex32 = printf "%08x"
+
 outputLog :: Radiant -> String -> IO ()
 outputLog c s = putChunkLn $ chunk (pack s) & fore c
 
@@ -50,27 +72,46 @@ notImplemented err = do
   rlog $ "Not implemented: " <> err <> ". Terminating execution."
   exitFailure
 
+fst4 :: (a, b, c, d) -> a
+fst4 (x, _, _, _) = x
 
-fst3 :: (a, b, c) -> a
-fst3 (x, _, _) = x
+snd4 :: (a, b, c, d) -> b
+snd4 (_, x, _, _) = x
 
-snd3 :: (a, b, c) -> b
-snd3 (_, x, _) = x
+trd4 :: (a, b, c, d) -> c
+trd4 (_, _, x, _) = x
 
-trd3 :: (a, b, c) -> c
-trd3 (_, _, x) = x
+fth4 :: (a, b, c, d) -> d
+fth4 (_, _, _, x) = x
 
-class TriFunctor f where
-  trimap :: (a -> a') -> (b -> b') -> (c -> c') -> f a b c -> f a' b' c'
+class QuadFunctor f where
+  quadmap ::
+    (a -> a') ->
+    (b -> b') ->
+    (c -> c') ->
+    (d -> d') ->
+    f a b c d -> f a' b' c' d'
 
-  map1   :: (a -> a') -> f a b c -> f a' b c
-  map1 f1 = trimap f1 id id
+  map1   :: (a -> a') -> f a b c d -> f a' b c d
+  map1 f1 = quadmap f1 id id id
 
-  map2   :: (b -> b') -> f a b c -> f a b' c
-  map2 f2 = trimap id f2 id
+  map2   :: (b -> b') -> f a b c d -> f a b' c d
+  map2 f2 = quadmap id f2 id id
 
-  map3   :: (c -> c') -> f a b c -> f a b c'
-  map3 f3 = trimap id id f3
+  map3   :: (c -> c') -> f a b c d -> f a b c' d
+  map3 f3 = quadmap id id f3 id
 
-instance TriFunctor (,,) where
-  trimap f1 f2 f3 (a, b, c) = (f1 a, f2 b, f3 c)
+  map4   :: (d -> d') -> f a b c d -> f a b c d'
+  map4 f4 = quadmap id id id f4
+
+instance QuadFunctor (,,,) where
+  quadmap f1 f2 f3 f4 (a, b, c, d) = (f1 a, f2 b, f3 c, f4 d)
+
+(.>>) :: Monad m => (t -> m a) -> (t -> m b) -> t -> m b
+f .>> g = \x -> f x >> g x
+
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM b t f = do b' <- b; if b' then t else f
+
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM b = ifM b (pure ())

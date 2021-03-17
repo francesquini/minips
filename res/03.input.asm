@@ -20,7 +20,7 @@
     li $v0, 4       # 4 é o código para imprimir uma string
     syscall
 
-    # imprime inteiro lido 
+    # imprime inteiro lido
     move $a0, $s0
     li $v0, 1 # 1 é o código para imprimir um inteiro
     syscall
