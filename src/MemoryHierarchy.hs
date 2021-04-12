@@ -22,16 +22,19 @@ module MemoryHierarchy
 where
 
 import Prelude hiding (read)
+
 import Architecture (Address)
-import Data.Word
-import Control.Monad.State
 import MemoryElement hiding  (tracingEnabled)
-import Data.Bits
-import qualified Data.Vector as V
-import Control.Exception
-import Control.Monad.Writer
 import Utils
+
+import Data.Bits
 import Data.Functor
+import Data.Word
+import qualified Data.Vector as V hiding ((//),(!))
+
+import Control.Exception
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 
 data AccessType = Instruction | Data
 
@@ -59,7 +62,7 @@ execMemoryHierarchyST f = snd . fst . runMemoryHierarchyST f
 onMemoryLevelRun :: MemoryLevelST b -> MemoryHierarchyUpdateFun -> MemoryLevel -> MemoryHierarchyST b
 onMemoryLevelRun runner updater s = do
   let ((ret, s'), log0) = runMemoryLevelST runner s
-  traceST $ map ("\t" <>) log0
+  traceST $ fmap ("\t"   <>) log0
   modify $ updater s'
   return ret
 
@@ -117,13 +120,15 @@ lineAndIx ad = gets lineAndIx'
 
 data MemoryOp = Read | Write
 
-traceST :: [String] -> MemoryHierarchyST ()
+traceST :: Log -> MemoryHierarchyST ()
 traceST strs = whenM (gets tracingEnabled) $ tell strs
 
 traceAccess' :: String -> Address -> MemoryHierarchyST ()
 traceAccess' prefix addr = do
   mh <- get
-  traceST [prefix <> " 0x" <> showHex32 addr <> " (line# 0x" <> showHex32 (addr `shiftR` lineShift mh) <> ")"]
+  traceST [
+    prefix <> " 0x" <> showHex32 addr <>
+    " (line# 0x" <> showHex32 (addr `shiftR` lineShift mh) <> ")"]
 
 traceAccess :: AccessType -> MemoryOp -> Address -> MemoryHierarchyST ()
 traceAccess Data        Read  = traceAccess' "R"
@@ -136,7 +141,7 @@ read aType ad =  assert (ad .&. 0x3 == 0) $ do
   traceAccess aType Read ad
   (l, i) <- lineAndIx ad
   (cl, lat) <- readLine aType l
-  return (cl V.! i, lat)
+  return (cl `V.unsafeIndex` i, lat)
 
 -- Escritas são sempre em dados
 write :: Address -> Word32 -> MemoryHierarchyST Latency

@@ -4,11 +4,13 @@ import Prelude hiding (read)
 
 import Architecture
 import qualified InstrDecoder as D
+import MemoryHierarchy
 import Utils
+
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 import Data.Word
-import MemoryHierarchy
+
 import System.IO
 
 type ICount = (Int, Int, Int, Int)
@@ -39,7 +41,7 @@ fpRegRead :: FPRegName -> Minips -> Word32
 fpRegRead fpRegName st =
   fpRegisters st IM.! fromEnum fpRegName
 
-memRead :: AccessType -> Address -> Minips -> (((Word32, Latency), [String]), Minips)
+memRead :: AccessType -> Address -> Minips -> (((Word32, Latency), Log), Minips)
 memRead aType ad st =
   ((ret, log0), st{memory = mh})
   where
@@ -59,7 +61,7 @@ fpRegWrite r v m@Minips {fpRegisters=fpRegs} =
   where
     fpRegs' = IM.insert (fromEnum r) (fromIntegral v) fpRegs
 
-memWrite :: Address -> Word32 -> Minips -> ((Latency, [String]), Minips)
+memWrite :: Address -> Word32 -> Minips -> ((Latency, Log), Minips)
 memWrite ad val st =
   ((lat, log0), st{memory=mh})
   where

@@ -11,26 +11,26 @@ module RuntimeST (
     ) where
 
 import Architecture
+import Constants
+import MemoryHierarchy
 import qualified Runtime as R
 import Utils
-import MemoryHierarchy
 
-import Data.Word as W
+import Control.Monad.State.Strict
 
-import Control.Monad.State
+import Data.Char
 import Data.Binary.IEEE754
-import qualified Data.IntMap as IM
-import Constants
-import Text.Printf
-import Data.Function
 import Data.Bits
 import Data.Bifunctor
-import Data.Char
-import System.IO
+import Data.Function ((&))
 import Data.Maybe
+import Data.Word as W
+import qualified Data.IntMap as IM
+
+import Text.Printf
+import System.IO
 
 type MinipsST = StateT R.Minips IO
-
 
 ------------
 ------------
@@ -158,7 +158,7 @@ loggingDoAccess (v,lg) = do
       newHandle <- liftIO  $ openFile traceFile AppendMode
       modify $ \s -> s{R.traceFileHandle = Just newHandle}
     Just handle <- gets R.traceFileHandle
-    liftIO $ hPutStr handle (unlines lg)
+    liftIO $ mapM_ (hPutStr handle) lg
   return v
 
 memRead :: AccessType -> Address -> MinipsST (Word32, Latency)

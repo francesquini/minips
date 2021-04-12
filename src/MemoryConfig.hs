@@ -6,7 +6,6 @@ where
 
 import MemoryHierarchy
 import System.Random
-import Utils
 
 defLineSize :: Int
 defLineSize = 32

@@ -24,15 +24,15 @@ import Data.Bits
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 import Data.Vector (Vector)
-import qualified Data.Vector as V
+import qualified Data.Vector as V hiding ((//), (!))
 import Data.Word
 import GHC.Base (assert)
 import Utils
 import Data.Bifunctor
 import System.Random
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Data.Functor ((<&>))
-import Control.Monad.Writer
+import Control.Monad.Writer.Strict
 import Data.Maybe
 
 type LineIx      = Int
@@ -108,7 +108,7 @@ type MemoryLevelST = StateT MemoryLevel (Writer Log)
 runMemoryLevelST :: MemoryLevelST a -> MemoryLevel -> MemoryAccessResponse (a, MemoryLevel)
 runMemoryLevelST f s =  runWriter $ runStateT f s
 
-traceMLST :: [String] -> MemoryLevelST ()
+traceMLST :: Log -> MemoryLevelST ()
 traceMLST strs = whenM (gets tracingEnabled) $ tell strs
 
 cacheNextLevelRun :: MemoryLevelST a -> MemoryLevelST a
@@ -140,7 +140,8 @@ lruReplacementPolicy _ = lruReplacementPolicy0
   where
     lruReplacementPolicy0 :: ReplacementPolicy
     lruReplacementPolicy0 setIndex = do
-      Set st <- gets cSets <&> (V.! setIndex)
+      Set st <- gets cSets <&> (`V.unsafeIndex` setIndex)
+      -- Set st <- gets cSets <&> (V.! setIndex)
       let ix = V.minIndexBy (\a b -> compare (ceLastAccess a) (ceLastAccess b)) st
       logMemActivity $ "LRU replacement policy. Way#" <> show ix
       return ix
@@ -199,7 +200,7 @@ scoreHit :: MemoryLevelST ()
 scoreHit = scoreStat "Hit" (first (+1))
 
 scoreMiss :: MemoryLevelST ()
-scoreMiss = scoreStat "Miss"(second (+1))
+scoreMiss = scoreStat "Miss" (second (+1))
 
 cacheTick :: MemoryLevelST ()
 cacheTick = modify $ \s -> s{ticks= ticks s + 1}
@@ -208,15 +209,14 @@ updateCacheEntryAndTick :: SetIndex -> Int -> (CacheEntry -> CacheEntry) -> Memo
 updateCacheEntryAndTick setIndex wayNb updFun = do
   tick <- gets ticks
   sets <- gets cSets
-  let Set st  = sets V.! setIndex
-      ce      = updFun $ st V.! wayNb
-      newSet  = Set $ st V.// [(wayNb, ce{ceLastAccess=tick})]
-      newSets = sets V.// [(setIndex, newSet)]
+  let Set st  = sets `V.unsafeIndex` setIndex
+      ce      = updFun $ st `V.unsafeIndex` wayNb
+      newSet  = Set $ st `V.unsafeUpd` [(wayNb, ce{ceLastAccess=tick})]
+      newSets = sets `V.unsafeUpd` [(setIndex, newSet)]
   modify $ \s -> s{cSets=newSets}
 
 touchCacheEntry :: SetIndex -> Int -> MemoryLevelST ()
 touchCacheEntry setIndex wayNb = updateCacheEntryAndTick setIndex wayNb id
-
 
 memoryLevelRecursiveFlush :: MemoryLevelST Latency
 memoryLevelRecursiveFlush = memoryLevelFlush True
@@ -264,9 +264,9 @@ resetMLStats = do
 -- -> (way#, mem line)
 cacheSearch :: (SetIndex, Tag) -> MemoryLevel -> Maybe (Int, MemoryLine)
 cacheSearch (setIndex, tag) ~ca@Cache{} =
-      (\i -> (i, ceMemLine $ st V.! i)) <$> wayNumber
+      (\i -> (i, ceMemLine $ st `V.unsafeIndex` i)) <$> wayNumber
       where
-        (Set st) = cSets ca V.! setIndex
+        (Set st) = cSets ca `V.unsafeIndex` setIndex
         wayNumber = V.findIndex (ceMatches tag) st
 
 cacheUpdateLine :: LineIx -> (SetIndex, Tag) -> Int -> MemoryLine -> MemoryLevelST Latency
@@ -280,8 +280,8 @@ cacheReplaceLine lineIx (setIndex, newTag) memLine = do
   logMemActivity $ "Replace to include line# 0x" <> showHex32 (fromIntegral lineIx)
   wayNb  <- gets cReplacementPolicy >>$ setIndex
 
-  Set oldSet <- gets cSets <&> (V.! setIndex)
-  let oldCe = oldSet V.! wayNb
+  Set oldSet <- gets cSets <&> (`V.unsafeIndex` setIndex)
+  let oldCe = oldSet `V.unsafeIndex` wayNb
 
   lat0 <- if ceNeedsWriteBack oldCe then do
       logMemActivity $ "Writing back line: 0x" <> showHex32 (fromIntegral $ ceLineIx oldCe)

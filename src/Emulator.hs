@@ -5,7 +5,7 @@ import RuntimeST
 import Utils
 
 import Control.Monad
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Data.Functor
 import Data.Maybe
 
