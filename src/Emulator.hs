@@ -1,7 +1,7 @@
 module Emulator where
 
 import Architecture
-import RuntimeST
+import MinipsST
 import Utils
 
 import Control.Monad

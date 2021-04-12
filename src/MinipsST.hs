@@ -1,19 +1,19 @@
-module RuntimeST (
-      module RuntimeST
+module MinipsST (
+      module MinipsST
     , AccessType(..)
     , MemoryAccessResponse
     , MemoryHierarchy
     , Log
     , Latency
-    , R.ICount
-    , R.rTypeICount, R.iTypeICount, R.jTypeICount
-    , R.traceFileHandle
+    , M.ICount
+    , M.rTypeICount, M.iTypeICount, M.jTypeICount
+    , M.traceFileHandle
     ) where
 
 import Architecture
 import Constants
 import MemoryHierarchy
-import qualified Runtime as R
+import qualified Minips as M
 import Utils
 
 import Control.Monad.State.Strict
@@ -30,7 +30,7 @@ import qualified Data.IntMap as IM
 import Text.Printf
 import System.IO
 
-type MinipsST = StateT R.Minips IO
+type MinipsST = StateT M.Minips IO
 
 ------------
 ------------
@@ -38,7 +38,7 @@ type MinipsST = StateT R.Minips IO
 ------------
 ------------
 
-makeMinips :: Executable -> MemoryHierarchy -> Either String R.Minips
+makeMinips :: Executable -> MemoryHierarchy -> Either String M.Minips
 makeMinips (txt, ro, dt) memHier
   | length txt > maxTextSize @W32 = Left $
       printf ".text section overlaps with .rodata. Maximum .text size %d MB." $
@@ -46,7 +46,7 @@ makeMinips (txt, ro, dt) memHier
   | length ro > maxRodataSize @W32  = Left $
       printf ".rodata section overlaps with .data. Maximum .rodata size %.2f MB." $
              maxRodataSize @Mebi
-  | otherwise = Right $ R.Minips flushedMemHier regs fpregs (0, 0, 0, 0) 0 Nothing Nothing
+  | otherwise = Right $ M.Minips flushedMemHier regs fpregs (0, 0, 0, 0) 0 Nothing Nothing
   where
     mem0     = zip [textAddress,   textAddress   + 4 ..] txt ++
                zip [roDataAddress, roDataAddress + 4 ..] ro  ++
@@ -65,34 +65,34 @@ makeMinips (txt, ro, dt) memHier
     fpregs = IM.fromList (zip (fromEnum <$> [F0 ..]) (repeat 0))
 
 tick :: MinipsST ()
-tick = modify R.tick
+tick = modify M.tick
 
-getStats :: MinipsST (Int, R.ICount)
+getStats :: MinipsST (Int, M.ICount)
 getStats = do
-  cycles <- gets R.cycles
-  counts <- gets R.iCount
+  cycles <- gets M.cycles
+  counts <- gets M.iCount
   return (cycles, counts)
 
 getBranchDelaySlotAddress :: MinipsST (Maybe Word32)
-getBranchDelaySlotAddress = gets R.delaySlotAddr
+getBranchDelaySlotAddress = gets M.delaySlotAddr
 
 setBranchDelaySlotAddress :: Maybe Word32 -> MinipsST ()
-setBranchDelaySlotAddress = modify . R.setBranchDelaySlotAddress
+setBranchDelaySlotAddress = modify . M.setBranchDelaySlotAddress
 
 resetBranchDelaySlotAddress :: MinipsST ()
 resetBranchDelaySlotAddress = setBranchDelaySlotAddress Nothing
 
 decodeInstruction :: Word32 -> MinipsST InstrWord
-decodeInstruction = state . R.decodeInstruction
+decodeInstruction = state . M.decodeInstruction
 
 incPC :: MinipsST ()
-incPC = modify R.incPC
+incPC = modify M.incPC
 
 incRICount, incIICount, incJICount, incFRCount :: MinipsST ()
-incRICount = modify R.incRICount
-incIICount = modify R.incIICount
-incJICount = modify R.incJICount
-incFRCount = modify R.incFRCount
+incRICount = modify M.incRICount
+incIICount = modify M.incIICount
+incJICount = modify M.incJICount
+incFRCount = modify M.incFRCount
 
 ----------
 ----------
@@ -101,10 +101,10 @@ incFRCount = modify R.incFRCount
 ----------
 
 regRead :: RegName -> MinipsST Word32
-regRead = gets . R.regRead
+regRead = gets . M.regRead
 
 regWrite :: Integral32 a => RegName -> a -> MinipsST ()
-regWrite r = modify . R.regWrite r
+regWrite r = modify . M.regWrite r
 
 infixr 4 !<
 (!<) :: Integral32 a => RegName -> a -> MinipsST ()
@@ -117,7 +117,7 @@ infixr 4 !<
 ----------
 
 fpRegRead :: FPRegName -> MinipsST Word32
-fpRegRead = gets . R.fpRegRead
+fpRegRead = gets . M.fpRegRead
 
 fpRegReadFloat :: FPRegName -> MinipsST Float
 fpRegReadFloat reg = wordToFloat <$> fpRegRead reg
@@ -129,7 +129,7 @@ fpRegReadDouble reg = do
   return $ doubleFromWords32 up low
 
 fpRegWrite :: Integral32 a => FPRegName -> a -> MinipsST ()
-fpRegWrite r = modify . R.fpRegWrite r
+fpRegWrite r = modify . M.fpRegWrite r
 
 infixr 4 !!<
 (!!<) :: Integral32 a => FPRegName -> a -> MinipsST ()
@@ -154,15 +154,15 @@ fpRegWriteDouble reg db = do
 loggingDoAccess :: MemoryAccessResponse a -> MinipsST a
 loggingDoAccess (v,lg) = do
   unless (null lg) $ do
-    whenM (gets $ isNothing . R.traceFileHandle) $ do
+    whenM (gets $ isNothing . M.traceFileHandle) $ do
       newHandle <- liftIO  $ openFile traceFile AppendMode
-      modify $ \s -> s{R.traceFileHandle = Just newHandle}
-    Just handle <- gets R.traceFileHandle
+      modify $ \s -> s{M.traceFileHandle = Just newHandle}
+    Just handle <- gets M.traceFileHandle
     liftIO $ mapM_ (hPutStr handle) lg
   return v
 
 memRead :: AccessType -> Address -> MinipsST (Word32, Latency)
-memRead aType addr = loggingDoAccess =<< state (R.memRead aType addr)
+memRead aType addr = loggingDoAccess =<< state (M.memRead aType addr)
 
 readString :: Address -> MinipsST  (String, Latency)
 readString memAddr = readStringAligned alignedAddr offset
@@ -181,4 +181,4 @@ readStringAligned address offset = do
     return (str0, lat0)
 
 memWrite ::  Address -> Word32 -> MinipsST Latency
-memWrite addr val = loggingDoAccess =<< state (R.memWrite addr val)
+memWrite addr val = loggingDoAccess =<< state (M.memWrite addr val)

@@ -15,7 +15,7 @@ import Text.Printf (printf)
 import Utils (glog, ifM, removeFileIfExists)
 import Constants
 import Data.Time (UTCTime)
-import RuntimeST
+import MinipsST
 import Text.Read (readMaybe)
 import qualified MemoryConfig as MC
 import System.Random

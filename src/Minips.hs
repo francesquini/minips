@@ -1,4 +1,4 @@
-module Runtime where
+module Minips where
 
 import Prelude hiding (read)
 
