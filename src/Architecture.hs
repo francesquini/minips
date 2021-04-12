@@ -12,7 +12,11 @@ import Data.Word
 import Utils
 import Data.Char (toLower)
 
+                -- .txt      .rodata   .data
+type Executable = ([Word32], [Word32], [Word32])
 data Endianness = Big | Little deriving Eq
+
+type Address = Word32
 
 data RegName =
   -- General purpose registers
@@ -115,6 +119,21 @@ data Instr =
   | MULD
   deriving (Show)
 
+mnemonic :: Instr -> String
+mnemonic ADDS  = "add.s"
+mnemonic ADDD  = "add.d"
+mnemonic CVTDS = "cvt.d.s"
+mnemonic CVTDW = "cvt.d.w"
+mnemonic CVTSW = "cvt.s.w"
+mnemonic CVTSD = "cvt.s.d"
+mnemonic DIVD  = "div.d"
+mnemonic DIVS  = "div.s"
+mnemonic MOVS  = "mov.s"
+mnemonic MOVD  = "mov.d"
+mnemonic MULS  = "mul.s"
+mnemonic MULD  = "mul.d"
+mnemonic i     =  map toLower $ show i
+
 type Shamt = Word8
 
 data InstrWord where
@@ -124,83 +143,142 @@ data InstrWord where
   FRInstr :: Instr -> FPRegName -> FPRegName -> FPRegName    -> InstrWord
   Syscall ::                                                    InstrWord
 
+--------------------------
+-- Instruction Printing --
+--------------------------
+
 class Show a => PShow a where
+  basicShow :: a -> String
+  basicShow v = show v
+
   pshow :: a -> String
-  pshow v = show v
+  pshow v = toLower <$> basicShow v
 
 instance PShow RegName where
-  pshow r = "$" <> show r
+  basicShow r = "$" <> show r
 instance PShow FPRegName where
-  pshow r = "$" <> show r
+  basicShow r = "$" <> show r
 instance PShow Instr
 instance PShow Word8
 instance PShow Int16
 instance PShow String where
-  pshow s = s
+  basicShow = id
 
 data ShowBox = forall s. PShow s => Bx s
 instance Show ShowBox where
   show (Bx s) = pshow s
 
-showBox :: InstrWord -> [ShowBox]
-showBox (RInstr i rs rt rd sa) =
-  case i of
-    BREAK -> [Bx BREAK]
-    JR    -> [Bx JR,  Bx rs]
-    JALR  -> if rd == Ra
-      then   [Bx JALR, Bx rs]
-      else   [Bx JALR, Bx rd, Bx rs]
-    MFHI  -> [Bx MFHI, Bx rd]
-    MFLO  -> [Bx MFLO, Bx rd]
-    MULT  -> [Bx MULT, Bx rs, Bx rt]
-    SLL   -> if (Zero, Zero, Zero, 0) == (rs, rt, rd, sa)
-      then   [Bx NOP]
-      else   [Bx SLL, Bx rd, Bx rt, Bx sa]
-    SRA   -> [Bx SRA, Bx rd, Bx rt, Bx sa]
-    SRL   -> [Bx SRL, Bx rd, Bx rt, Bx sa]
-    _     -> [Bx i,   Bx rd, Bx rs, Bx rt]
-showBox (IInstr i rs rt w) =
-  case i of
-    LB   -> [Bx LB, Bx rt, Bx rswhex]
-    LBU  -> [Bx LBU, Bx rt, Bx rswhex]
-    LUI  -> [Bx LUI, Bx rt, Bx w]
-    LW   -> [Bx LW, Bx rt, Bx rswhex]
-    LWC1 -> [Bx LWC1, Bx rtfp, Bx rswhex]
-    LDC1 -> [Bx LDC1, Bx rtfp, Bx rswhex]
-    BEQ  -> [Bx BEQ, Bx rs, Bx rt, Bx w]
-    BGEZ -> [Bx BGEZ, Bx rs, Bx w]
-    BLEZ -> [Bx BLEZ, Bx rs, Bx w]
-    BNE  -> [Bx BNE, Bx rs, Bx rt, Bx w]
-    SB   -> [Bx SB,  Bx rs, Bx rt, Bx w]
-    SH   -> [Bx SH,  Bx rs, Bx rt, Bx w]
-    SW   -> [Bx SW, Bx rt, Bx rswhex]
-    SWC1 -> [Bx SWC1, Bx rtfp, Bx rswhex]
-    _    -> [Bx i,   Bx rt, Bx rs, Bx w]
+data ShowIntrType =
+  -- Special
+    Special
+  -- R-Type
+  | I
+  | IRd
+  | IRdRs
+  | IRdRsRt
+  | IRdRtSa
+  -- I-Type
+  | IRs
+  | IRsRt
+  | IRsRtW
+  | IRsW
+  | IRtfpRsx
+  | IRtRsx
+  | IRtRsW
+  | IRtW
+  -- FR-Type
+  | IFdFsFt
+  | IFdFs
+  | IRtFs
+
+rswhex :: PShow a => a -> Int16 -> String
+rswhex rs w =
+  show w  <> "(" <> pshow rs <>")  # 0x" <> strw
   where
-    rtfp   = w2fpreg (fromIntegral $ fromEnum rt)
-    rswhex = "0x" <> showHex w "(" <> pshow rs <>")"
-showBox (JInstr i w) = [Bx i, Bx $ "0x" <> showHex w " # 0x" <> showHex (w `shiftL` 2) ""]
-showBox (FRInstr i ft fs fd) =
-  case i of
-    ADDS  -> [Bx "add.s", Bx fd, Bx fs, Bx ft]
-    ADDD  -> [Bx "add.d", Bx fd, Bx fs, Bx ft]
-    CVTDS -> [Bx "cvt.d.s", Bx fd, Bx fs]
-    CVTDW -> [Bx "cvt.d.w", Bx fd, Bx fs]
-    CVTSW -> [Bx "cvt.s.w", Bx fd, Bx fs]
-    CVTSD -> [Bx "cvt.s.d", Bx fd, Bx fs]
-    DIVD  -> [Bx "div.d", Bx fd, Bx fs, Bx ft]
-    DIVS  -> [Bx "div.s", Bx fd, Bx fs, Bx ft]
-    MFC1  -> [Bx MFC1, Bx (toEnum $ fromEnum ft :: RegName), Bx fs]
-    MOVS  -> [Bx "mov.s", Bx fd, Bx fs]
-    MOVD  -> [Bx "mov.d", Bx fd, Bx fs]
-    MTC1  -> [Bx MTC1, Bx (toEnum $ fromEnum ft :: RegName), Bx fs]
-    MULS  -> [Bx "mul.s", Bx fd, Bx fs, Bx ft]
-    MULD  -> [Bx "mul.d", Bx fd, Bx fs, Bx ft]
-    _ -> error $ "Operação de disassembly para instrução não definida: " ++ show i
-showBox Syscall =  [Bx "syscall"]
+    strw   = showHex32 (fromIntegral (signExtend w :: Int32) :: Word32)
+
+rtfp :: Enum a => a -> FPRegName
+rtfp  rt = w2fpreg (fromIntegral $ fromEnum rt)
+
+rtreg :: Enum a => a -> RegName
+rtreg ft = toEnum $ fromEnum ft :: RegName
+
+bxi :: Instr -> ShowBox
+bxi = Bx . mnemonic
+
+sBoxLst :: InstrWord -> ShowIntrType -> [ShowBox]
+sBoxLst (RInstr  i _  _  _  _ ) I        = [bxi i]
+sBoxLst (RInstr  i _  _  rd _ ) IRd      = [bxi i, Bx rd]
+sBoxLst (RInstr  i rs _  rd _ ) IRdRs    = [bxi i, Bx rd, Bx rs]
+sBoxLst (RInstr  i rs rt rd _ ) IRdRsRt  = [bxi i, Bx rd, Bx rs, Bx rt]
+sBoxLst (RInstr  i _  rt rd sa) IRdRtSa  = [bxi i, Bx rd, Bx rt, Bx sa]
+sBoxLst (RInstr  i rs _  _  _ ) IRs      = [bxi i, Bx rs]
+sBoxLst (RInstr  i rs rt _  _ ) IRsRt    = [bxi i, Bx rs, Bx rt]
+sBoxLst (IInstr  i rs rt w)     IRsRtW   = [bxi i, Bx rs, Bx rt, Bx w]
+sBoxLst (IInstr  i rs _  w)     IRsW     = [bxi i, Bx rs, Bx w]
+sBoxLst (IInstr  i rs rt w)     IRtfpRsx = [bxi i, Bx $ rtfp rt, Bx $ rswhex rs w]
+sBoxLst (IInstr  i rs rt w)     IRtRsx   = [bxi i, Bx rt, Bx $ rswhex rs w]
+sBoxLst (IInstr  i rs rt w)     IRtRsW   = [bxi i, Bx rt, Bx rs, Bx w]
+sBoxLst (IInstr  i _  rt w)     IRtW     = [bxi i, Bx rt, Bx w]
+sBoxLst (FRInstr i ft fs fd)    IFdFsFt  = [bxi i, Bx fd, Bx fs, Bx ft]
+sBoxLst (FRInstr i _  fs fd)    IFdFs    = [bxi i, Bx fd, Bx fs]
+sBoxLst (FRInstr i ft fs _ )    IRtFs    = [bxi i, Bx $ rtreg ft, Bx fs]
+sBoxLst ins                     Special  =
+  case ins of
+    (RInstr SLL Zero Zero Zero 0)        -> [Bx "nop"]
+    Syscall                              -> [Bx "syscall"]
+    _                                    -> undefined
+sBoxLst _                       _        =  undefined
+
+showBox :: InstrWord -> [ShowBox]
+showBox ins@(RInstr i rs rt rd sa) =
+  sBoxLst ins $ case i of
+    BREAK -> I
+    JR    -> IRs
+    JALR  -> if rd == Ra
+      then   IRs
+      else   IRdRs
+    MFHI  -> IRd
+    MFLO  -> IRd
+    MULT  -> IRsRt
+    SLL   -> if (Zero, Zero, Zero, 0) == (rs, rt, rd, sa)
+      then   Special
+      else   IRdRtSa
+    SRA   -> IRdRtSa
+    SRL   -> IRdRtSa
+    _     -> IRdRsRt
+showBox ins@(IInstr i _ _ _) =
+  sBoxLst ins $ case i of
+    LB   -> IRtRsx
+    LBU  -> IRtRsx
+    LUI  -> IRtW
+    LW   -> IRtRsx
+    LWC1 -> IRtfpRsx
+    LDC1 -> IRtfpRsx
+    BEQ  -> IRsRtW
+    BGEZ -> IRsW
+    BLEZ -> IRsW
+    BNE  -> IRsRtW
+    SB   -> IRsRtW
+    SH   -> IRsRtW
+    SW   -> IRtRsx
+    SWC1 -> IRtfpRsx
+    _    -> IRtRsW
+showBox (JInstr i w) = [bxi i, Bx $ "0x" <> showHex w " # 0x" <> showHex (w `shiftL` 2) ""]
+showBox ins@(FRInstr i _ _ _) =
+  sBoxLst ins $ case i of
+    CVTDS -> IFdFs
+    CVTDW -> IFdFs
+    CVTSW -> IFdFs
+    CVTSD -> IFdFs
+    MOVS  -> IFdFs
+    MOVD  -> IFdFs
+    MFC1  -> IRtFs
+    MTC1  -> IRtFs
+    _ -> IFdFsFt
+showBox Syscall =  sBoxLst Syscall Special
 
 instance Show InstrWord where
-  show iw = map toLower $
-    ins <> " " <> intercalate ", " ops
+  show iw = ins <> " " <> intercalate ", " ops
     where
       (ins:ops) = show <$> showBox iw

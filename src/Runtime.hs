@@ -1,19 +1,15 @@
 module Runtime where
 
+import Prelude hiding (read)
+
 import Architecture
 import qualified InstrDecoder as D
 import Utils
-import Constants
-
-import Control.Exception
-
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
-
-import Data.Bits
-import Data.Char
-import Data.Function ((&))
 import Data.Word
+import MemoryHierarchy
+import System.IO
 
 type ICount = (Int, Int, Int, Int)
 rTypeICount, iTypeICount, jTypeICount, frTypeICount :: ICount -> Int
@@ -23,39 +19,14 @@ jTypeICount  = trd4
 frTypeICount = fth4
 
 data Minips = Minips {
-    endianess     :: Endianness
-  , memory        :: IntMap Word32
-  , registers     :: IntMap Word32
-  , fpRegisters   :: IntMap Word32
-  , iCount        :: ICount
-  , cycles        :: Int
-  , delaySlotAddr :: Maybe Word32
+    memory          :: MemoryHierarchy
+  , registers       :: IntMap Word32
+  , fpRegisters     :: IntMap Word32
+  , iCount          :: ICount
+  , cycles          :: Int
+  , delaySlotAddr   :: Maybe Word32
+  , traceFileHandle :: Maybe Handle
   }
-
-makeMinips :: Endianness -> ([Word32], [Word32], [Word32]) -> Minips
-makeMinips end (txt, dt, ro) =
-  Minips end mem regs fpregs (0, 0, 0, 0) 0 Nothing
-  where
-    mem    = IM.fromList $
-                 zip [textAddress,   textAddress   + 4 ..] txt ++
-                 zip [roDataAddress, roDataAddress + 4 ..] ro  ++
-                 zip [dataAddress,   dataAddress   + 4 ..] dt
-    updateReg r v = IM.update (const $ Just v) (fromEnum r)
-    regs =
-         IM.fromList (zip (fromEnum <$> [Zero ..]) (repeat 0))
-      & updateReg Sp spAddress
-      & updateReg Gp gpAddress
-      & updateReg Pc pcAddress
-    fpregs = IM.fromList (zip (fromEnum <$> [F0 ..]) (repeat 0))
-
-prettyPrint  :: Minips -> String
-prettyPrint  Minips{memory=mem, registers=regs} =
-  unlines (map pp (IM.assocs regs)) ++
-  "\n-------------------------------\n" ++
-  unlines (map pp2 (IM.assocs mem))
-  where
-    pp (reg, val) = unwords [show (toEnum reg :: RegName), showHex val ""]
-    pp2 (ad, val) = unwords [showHex ad ":", showHex val ""]
 
 tick :: Minips -> Minips
 tick m@Minips{cycles = c} = m{cycles = c + 1}
@@ -68,20 +39,11 @@ fpRegRead :: FPRegName -> Minips -> Word32
 fpRegRead fpRegName st =
   fpRegisters st IM.! fromEnum fpRegName
 
-memRead :: Word32 -> Minips -> Word32
-memRead ad st = assert (ad `mod` 4 == 0) $
-  IM.findWithDefault 0 (fromIntegral ad) (memory st)
-
--- Accepts unaligned addresses
--- Reads a string stores in address memAddr
-readString :: Word32 -> Minips -> String
-readString memAddr st@Minips{endianess=e}=
-  chr <$> takeWhile (/= 0) mvals
+memRead :: AccessType -> Address -> Minips -> (((Word32, Latency), [String]), Minips)
+memRead aType ad st =
+  ((ret, log0), st{memory = mh})
   where
-    alignedAddr = memAddr .&. 0xfffffffc
-    offset      = fromIntegral $ memAddr .&. 0x00000003
-    fixEnd = if e == Big then id else reverse
-    mvals  = drop offset $ concatMap (fixEnd . breakWord . (`memRead` st)) [alignedAddr, alignedAddr + 4 ..]
+    ((ret, mh), log0) = runMemoryHierarchyST (read aType ad) (memory st)
 
 -- Write OPs
 regWrite :: Integral32 a => RegName -> a -> Minips -> Minips
@@ -97,12 +59,11 @@ fpRegWrite r v m@Minips {fpRegisters=fpRegs} =
   where
     fpRegs' = IM.insert (fromEnum r) (fromIntegral v) fpRegs
 
-
-memWrite :: Word32 -> Word32 -> Minips -> Minips
-memWrite addr v m@Minips{memory = mem} =  assert (addr `mod` 4 == 0) $
-  m{memory = mem'}
+memWrite :: Address -> Word32 -> Minips -> ((Latency, [String]), Minips)
+memWrite ad val st =
+  ((lat, log0), st{memory=mh})
   where
-    mem' = IM.insert (fromIntegral addr) v mem
+    ((lat, mh), log0) = runMemoryHierarchyST (write ad val) (memory st)
 
 getBranchDelaySlotAddress :: Minips -> Maybe Word32
 getBranchDelaySlotAddress = delaySlotAddr

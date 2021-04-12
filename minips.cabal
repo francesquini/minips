@@ -14,18 +14,31 @@ cabal-version:       >=1.10
 extra-source-files:  README.md
 
 executable minips
-  hs-source-dirs:      src
-  other-modules:       Architecture Runtime Utils RuntimeST Emulator InstrDecoder Constants
-  main-is:             Main.hs
-  default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
-                     , bytestring
-                     , binary
-                     , containers
-                     , mtl
-                     , rainbow
-                     , text
-                     , time
-                     , data-binary-ieee754
-                     , directory
-  ghc-options:       -O2 -Wall
+  hs-source-dirs:       src
+  other-modules:        Architecture
+                        Constants
+                        Emulator
+                        InstrDecoder
+                        MemoryConfig
+                        MemoryElement
+                        MemoryHierarchy
+                        Runtime
+                        RuntimeST
+                        Utils
+  main-is:              Main.hs
+  default-language:     Haskell2010
+  build-depends:        base >= 4.7 && < 5
+                      , bytestring
+                      , binary
+                      , containers
+                      , mtl
+                      , rainbow
+                      , text
+                      , time
+                      , data-binary-ieee754
+                      , directory
+                      , vector
+                      , random
+                      , ini
+  ghc-options:        -O2 -Wall -Wno-unticked-promoted-constructors
+  default-extensions: DataKinds TypeApplications

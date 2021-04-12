@@ -15,19 +15,23 @@ import Rainbow
 import Data.Function ((&))
 import System.Exit
 
+
 import qualified Debug.Trace as T
 import Text.Printf
 import Data.Binary.IEEE754
+import Control.Monad
+import System.Directory
 
 trace :: String -> a -> a
 trace = T.trace
 -- trace _ a = a
 
-
-
 class (Integral a, Show a) => Integral32 a
 instance Integral32 Word32
 instance Integral32 Int32
+
+powerOf2 :: Int -> Bool
+powerOf2 x = x > 0 && ((x .&. (x - 1)) == 0)
 
 signExtend :: Integral32 a =>  Int16 -> a
 signExtend = fromIntegral
@@ -37,7 +41,7 @@ zeroExtend i = fromIntegral (fromIntegral i :: Word16)
 
 breakWord :: Integral a => Word32 -> [a]
 breakWord w =
-  map maskShift [24, 16, 8, 0]
+  map maskShift [0, 8, 16, 24]
   where
     maskShift n = fromIntegral $ ((0xFF `shiftL` n) .&. w) `shiftR` n
 
@@ -71,6 +75,15 @@ notImplemented :: String -> IO ()
 notImplemented err = do
   rlog $ "Not implemented: " <> err <> ". Terminating execution."
   exitFailure
+
+fst3 :: (a, b, c) -> a
+fst3 (x, _, _) = x
+
+snd3 :: (a, b, c) -> b
+snd3 (_, x, _) = x
+
+trd3 :: (a, b, c) -> c
+trd3 (_, _, x) = x
 
 fst4 :: (a, b, c, d) -> a
 fst4 (x, _, _, _) = x
@@ -113,5 +126,21 @@ f .>> g = \x -> f x >> g x
 ifM :: Monad m => m Bool -> m a -> m a -> m a
 ifM b t f = do b' <- b; if b' then t else f
 
+whenM :: Monad m => m Bool -> m () -> m ()
+whenM b act = ifM b act (pure ())
+
 unlessM :: Monad m => m Bool -> m () -> m ()
 unlessM b = ifM b (pure ())
+
+infixl 4 >>$
+(>>$) :: Monad m => m (a -> m b) -> a -> m b
+(>>$) f = join . ap f . pure
+{-# INLINE (>>$) #-}
+
+removeFileIfExists :: FilePath -> IO ()
+removeFileIfExists path =
+  whenM (doesFileExist path) (removeFile path)
+
+fromRight :: Either a b -> b
+fromRight (Right b) = b
+fromRight _ = undefined

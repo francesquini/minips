@@ -1,18 +1,19 @@
 module InstrDecoder (disassemble, decodeInstruction) where
 
 import Architecture
+import Constants
 import Utils
 import Data.Bits
 import Data.Int
 import Data.Word
 
-disassemble :: [Word32] -> String
-disassemble ws = unlines $
+disassemble :: Executable -> String
+disassemble (txt, _, _) = unlines $
   zipWith3 (\a b c -> a ++ ": \t" ++  b ++ "\t" ++ c) addrs ws' insts
   where
-    insts = map (show . decodeInstruction) ws
-    ws'   = map showHex32 ws
-    addrs = map showHex32 [0x00400000,0x00400004..]
+    insts = map (show . decodeInstruction) txt
+    ws'   = map showHex32 txt
+    addrs = map showHex32 [textAddress, textAddress + 4 ..]
 
 decodeInstruction :: Word32 -> InstrWord
 decodeInstruction w =
@@ -169,7 +170,7 @@ getRs        w = fromIntegral $ (w .&. 0x03e00000) `shiftR` 21
 getRt        w = fromIntegral $ (w .&. 0x001f0000) `shiftR` 16
 getRd        w = fromIntegral $ (w .&. 0x0000f800) `shiftR` 11
 getShamt     w = fromIntegral $ (w .&. 0x000007c0) `shiftR` 6
-getFunct     w = fromIntegral $ w .&. 0x0000003f
+getFunct     w = fromIntegral $  w .&. 0x0000003f
 
 getFmt, getFt, getFs, getFd :: Word32 -> Word8
 getFmt         = getRs
