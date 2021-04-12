@@ -17,6 +17,7 @@ module MemoryElement (
   , lruReplacementPolicy
   , readLineLevel
   , writeLineLevel
+  , invalidateLineLevel
   , nextLevel) where
 
 import Prelude hiding (read)
@@ -206,18 +207,19 @@ scoreMiss = scoreStat "Miss" (second (+1))
 cacheTick :: MemoryLevelST ()
 cacheTick = modify $ \s -> s{ticks= ticks s + 1}
 
-updateCacheEntryAndTick :: SetIndex -> Int -> (CacheEntry -> CacheEntry) -> MemoryLevelST ()
-updateCacheEntryAndTick setIndex wayNb updFun = do
+updateCacheEntryAndTick :: SetIndex -> Int -> (CacheEntry -> CacheEntry) -> Bool -> MemoryLevelST ()
+updateCacheEntryAndTick setIndex wayNb updFun shouldTick= do
   tick <- gets ticks
   sets <- gets cSets
   let Set st  = sets `V.unsafeIndex` setIndex
       ce      = updFun $ st `V.unsafeIndex` wayNb
-      newSet  = Set $ st `V.unsafeUpd` [(wayNb, ce{ceLastAccess=tick})]
+      newSet  = Set $ st `V.unsafeUpd`
+        [(wayNb, if shouldTick then ce{ceLastAccess=tick} else ce)]
       newSets = sets `V.unsafeUpd` [(setIndex, newSet)]
   modify $ \s -> s{cSets=newSets}
 
 touchCacheEntry :: SetIndex -> Int -> MemoryLevelST ()
-touchCacheEntry setIndex wayNb = updateCacheEntryAndTick setIndex wayNb id
+touchCacheEntry setIndex wayNb = updateCacheEntryAndTick setIndex wayNb id True
 
 memoryLevelRecursiveFlush :: MemoryLevelST Latency
 memoryLevelRecursiveFlush = memoryLevelFlush True
@@ -277,7 +279,11 @@ cacheSearch (setIndex, tag) ~ca@Cache{} =
 cacheUpdateLine :: LineIx -> (SetIndex, Tag) -> Int -> MemoryLine -> MemoryLevelST Latency
 cacheUpdateLine lineIx (setIndex, tag) wayNb memLine = do
   logMemActivity $ "updating line# 0x" <> showHex32 (fromIntegral lineIx)
-  updateCacheEntryAndTick setIndex wayNb (const $ CacheEntry True True tag lineIx memLine undefined)
+  updateCacheEntryAndTick
+    setIndex
+    wayNb
+    (const $ CacheEntry True True tag lineIx memLine undefined)
+    True
   gets latency
 
 cacheReplaceLine :: LineIx -> (SetIndex, Tag) -> MemoryLine -> MemoryLevelST Latency
@@ -294,32 +300,62 @@ cacheReplaceLine lineIx (setIndex, newTag) memLine = do
     else do
       logMemActivity "Line clean/invalid. No need to write back."
       return 0
-  updateCacheEntryAndTick setIndex wayNb (const $ CacheEntry True False newTag lineIx memLine undefined)
+  updateCacheEntryAndTick
+    setIndex
+    wayNb (const $ CacheEntry True False newTag lineIx memLine undefined)
+    True
   gets $ (+ lat0) . latency
 
-readLineLevel :: LineIx -> MemoryLevelST (MemoryLine, Latency)
-readLineLevel lnIx = do
+readLineLevel :: LineIx -> Maybe MemoryLevel -> MemoryLevelST (MemoryLine, Latency)
+readLineLevel lnIx mml = do
   cacheTick
   ml <- get
   logMemActivity $ "read line# 0x" <> showHex32 (fromIntegral lnIx)
   case ml of
-    RAM{} -> do
-      scoreHit
+    RAM{}   -> readLineLevelRAM ml
+    Cache{} -> readLineLevelCache
+  where
+
+    readLineLevelRAM :: MemoryLevel -> MemoryLevelST (MemoryLine, Latency)
+    readLineLevelRAM ml = do
+      scoreHit -- Always a hit in RAM
       let mLine = IM.findWithDefault (rZeros ml) lnIx (rMem ml)
       gets $ \s -> (mLine, latency s)
-    Cache{} -> do
+
+    readLineLevelCache :: MemoryLevelST (MemoryLine, Latency)
+    readLineLevelCache =  do
       indexAndTag <- gets (`cIndexAndTag` lnIx)
       maybeMLine <- gets $ cacheSearch indexAndTag
-      case maybeMLine of
-        Just (mway, mLine) -> do  -- Cache Hit
-          scoreHit
-          touchCacheEntry (fst indexAndTag) mway
-          gets $ \s -> (mLine, latency s)
-        Nothing -> do -- Cache Miss
-          scoreMiss
-          (mLine, lat0) <- cacheNextLevelRun $ readLineLevel lnIx
+      maybe
+        (readLineLevelCacheMiss indexAndTag) -- Cache Miss
+        (readLineLevelCacheHit indexAndTag)  -- Cache Hit
+        maybeMLine
+
+    readLineLevelCacheHit :: (SetIndex, Tag) -> (Int, MemoryLine) -> MemoryLevelST (MemoryLine, Latency)
+    readLineLevelCacheHit indexAndTag (mway, mLine) = do
+      scoreHit
+      touchCacheEntry (fst indexAndTag) mway
+      gets $ \s -> (mLine, latency s)
+
+    readLineLevelCacheMiss :: (SetIndex, Tag) -> MemoryLevelST (MemoryLine, Latency)
+    readLineLevelCacheMiss indexAndTag = do
+      scoreMiss -- it is a miss..
+      -- now, if it's an I-cache needs to search on sister
+      case mml of
+        Nothing -> do -- No sister, perform a regular read next level
+          (mLine, lat0) <- cacheNextLevelRun $ readLineLevel lnIx Nothing
           lat1 <- cacheReplaceLine lnIx indexAndTag mLine
           return (mLine, lat0 + lat1)
+        Just sister -> do
+          let sisterIndexAndTag = cIndexAndTag sister lnIx
+              mSisterLine = cacheSearch sisterIndexAndTag sister
+          case mSisterLine of
+            Nothing -> -- then, it is not on the sister. Perform a regular Access
+              readLineLevel lnIx Nothing
+            (Just (_, mline)) -> do -- sister has it! replace my line and continue
+              -- notice that sister cache does not get an update in access times!!
+              lat <- cacheReplaceLine lnIx sisterIndexAndTag mline
+              return (mline, lat)
 
 writeLineLevel :: LineIx -> MemoryLine -> MemoryLevelST Latency
 writeLineLevel lnIx newLn = do
@@ -338,6 +374,24 @@ writeLineLevel lnIx newLn = do
       -- to score a hit
       wayn  <-  gets $ fst . fromJust . cacheSearch indexAndTag
       cacheUpdateLine lnIx indexAndTag wayn newLn
+
+invalidateLineLevel :: LineIx -> MemoryLevelST Bool -- if line was found
+invalidateLineLevel lnIx = do
+  ml <- get
+  case ml of
+    Cache{} -> do
+      let indexAndTag = cIndexAndTag ml lnIx
+          mmline = cacheSearch indexAndTag ml
+      when (isJust mmline) $ do
+        let wayn = fst $ fromJust mmline
+        updateCacheEntryAndTick
+          (fst indexAndTag)
+          wayn
+          (\ce -> assert (not $ ceDirty ce) ce{ceValid=False})
+          False
+        logMemActivity $ "invalidating line 0x" <> showHex32 (fromIntegral lnIx)
+      return $ isJust mmline
+    RAM {}  -> return False
 
 nextLevel :: MemoryLevel ->  Maybe MemoryLevel
 nextLevel Cache{cNextLevel=l} = Just l

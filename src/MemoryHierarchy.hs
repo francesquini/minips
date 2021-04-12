@@ -52,6 +52,10 @@ data MemoryHierarchy =
       , tracingEnabled :: Bool
       }
 
+isSplitCache :: MemoryHierarchy -> Bool
+isSplitCache Unified{} = False
+isSplitCache Split{}   = True
+
 type MemoryHierarchyST = StateT MemoryHierarchy (Writer Log)
 
 runMemoryHierarchyST :: MemoryHierarchyST a -> MemoryHierarchy -> MemoryAccessResponse (a, MemoryHierarchy)
@@ -166,10 +170,22 @@ write ad w32 = assert (ad .&. 0x3 == 0) $ do
   (cl, lat0) <- readLine Data l
   let newLine =  cl `V.unsafeUpd` [(i,w32)]
   lat1 <- writeLine l newLine
+  invalidateILine l
   return $ lat1 + lat0
 
 readLine :: AccessType -> LineIx -> MemoryHierarchyST (MemoryLine, Latency)
-readLine at lnIx = access at (readLineLevel lnIx)
+readLine at@Data lnIx =
+  -- Icache is read only, so, go directly to the next level if miss
+  access at (readLineLevel lnIx Nothing)
+readLine at@Instruction lnIx = do
+  mdc <- gets $ \mh -> if isSplitCache mh then Just (dataMem mh) else Nothing
+  access at $ readLineLevel lnIx mdc
 
 writeLine :: LineIx -> MemoryLine -> MemoryHierarchyST Latency
 writeLine lnIx val = access Data (writeLineLevel lnIx val)
+
+invalidateILine :: LineIx -> MemoryHierarchyST ()
+invalidateILine lnIx = do
+  whenM (gets isSplitCache) $ do
+    _ <- access Instruction (invalidateLineLevel lnIx)
+    return ()
