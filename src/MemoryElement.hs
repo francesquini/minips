@@ -12,6 +12,7 @@ module MemoryElement (
   , memoryLevelRecursiveFlush
   , AccessStats
   , resetMLStats
+  , getMLStats
   , randomReplacementPolicy
   , lruReplacementPolicy
   , readLineLevel
@@ -260,6 +261,10 @@ resetMLStats = do
   whenM (gets $ isJust . nextLevel) $ do
     cacheNextLevelRun resetMLStats
   modify $ \s -> s{stats=(0,0)}
+
+getMLStats :: MemoryLevelST (String, AccessStats)
+getMLStats = do
+  gets $ \ml -> (description ml, stats ml)
 
 -- -> (way#, mem line)
 cacheSearch :: (SetIndex, Tag) -> MemoryLevel -> Maybe (Int, MemoryLine)

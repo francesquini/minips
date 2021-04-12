@@ -67,11 +67,12 @@ makeMinips (txt, ro, dt) memHier
 tick :: MinipsST ()
 tick = modify M.tick
 
-getStats :: MinipsST (Int, M.ICount)
+getStats :: MinipsST (Int, M.ICount, [(String, AccessStats)])
 getStats = do
   cycles <- gets M.cycles
   counts <- gets M.iCount
-  return (cycles, counts)
+  memStats <- getMemStats
+  return (cycles, counts, memStats)
 
 getBranchDelaySlotAddress :: MinipsST (Maybe Word32)
 getBranchDelaySlotAddress = gets M.delaySlotAddr
@@ -158,7 +159,7 @@ loggingDoAccess (v,lg) = do
       newHandle <- liftIO  $ openFile traceFile AppendMode
       modify $ \s -> s{M.traceFileHandle = Just newHandle}
     Just handle <- gets M.traceFileHandle
-    liftIO $ mapM_ (hPutStr handle) lg
+    liftIO $ mapM_ (hPutStrLn handle) lg
   return v
 
 memRead :: AccessType -> Address -> MinipsST (Word32, Latency)
@@ -182,3 +183,6 @@ readStringAligned address offset = do
 
 memWrite ::  Address -> Word32 -> MinipsST Latency
 memWrite addr val = loggingDoAccess =<< state (M.memWrite addr val)
+
+getMemStats :: MinipsST [(String, AccessStats)]
+getMemStats = gets M.getMemStats

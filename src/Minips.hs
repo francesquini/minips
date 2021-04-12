@@ -84,3 +84,6 @@ incRICount m@Minips{iCount=c} = m{iCount = map1 (+1) c}
 incIICount m@Minips{iCount=c} = m{iCount = map2 (+1) c}
 incJICount m@Minips{iCount=c} = m{iCount = map3 (+1) c}
 incFRCount m@Minips{iCount=c} = m{iCount = map4 (+1) c}
+
+getMemStats :: Minips -> [(String, AccessStats)]
+getMemStats st = fst . fst $ runMemoryHierarchyST getMHStats (memory st)

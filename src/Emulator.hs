@@ -16,6 +16,7 @@ import Data.Word
 import GHC.Float
 
 import System.IO
+import MemoryHierarchy (AccessStats)
 
 countInstruction :: InstrWord -> MinipsST ()
 countInstruction RInstr{}  = incRICount
@@ -348,11 +349,8 @@ runInstruction' Syscall = do
       return 1
     _  -> error ("Unknown syscall: $a0=0x" ++ showHex a0v " v0=0x" ++ showHex funct "")
 
-runLoop :: MinipsST (Int, ICount)
+runLoop :: MinipsST (Int, ICount, [(String, AccessStats)])
 runLoop = do
-  mHandle <- gets traceFileHandle
-  liftIO $ maybe (pure ()) hFlush mHandle
-
   tick
   dsa <- getBranchDelaySlotAddress
   pcv <- regRead Pc
@@ -367,7 +365,7 @@ runLoop = do
       liftIO $ maybe (pure ()) hFlush mHandle
       getStats
 
-simulate :: ([Word32], [Word32], [Word32]) -> MemoryHierarchy -> IO (Int, ICount)
+simulate :: ([Word32], [Word32], [Word32]) -> MemoryHierarchy -> IO (Int, ICount, [(String, AccessStats)])
 simulate exe mh = do
   hSetBuffering stdin  LineBuffering
   hSetBuffering stdout NoBuffering

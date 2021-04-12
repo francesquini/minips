@@ -17,6 +17,7 @@ module MemoryHierarchy
     , write
     , AccessStats
     , resetMHStats
+    , getMHStats
     , Latency
   )
 where
@@ -58,6 +59,8 @@ runMemoryHierarchyST f s =  runWriter $ runStateT f s
 
 execMemoryHierarchyST :: MemoryHierarchyST a -> MemoryHierarchy -> MemoryHierarchy
 execMemoryHierarchyST f = snd . fst . runMemoryHierarchyST f
+
+type MemoryHierarchyUpdateFun = MemoryLevel -> MemoryHierarchy -> MemoryHierarchy
 
 onMemoryLevelRun :: MemoryLevelST b -> MemoryHierarchyUpdateFun -> MemoryLevel -> MemoryHierarchyST b
 onMemoryLevelRun runner updater s = do
@@ -102,6 +105,18 @@ access at f = do
         Instruction -> runF fixIC ic
   where
     runF = onMemoryLevelRun f
+
+getMHStats :: MemoryHierarchyST [(String, AccessStats)]
+getMHStats = do
+  mh <- get
+  case mh of
+    (Unified m _ _)   -> getMHStats' (Just m)
+    (Split dc ic _ _) -> retStep ic (Just dc)
+  where
+    gStats = onMemoryLevelRun getMLStats (\_ b -> b)
+    retStep ml mnl = (:) <$> gStats ml <*> getMHStats' mnl
+    getMHStats' Nothing   = return []
+    getMHStats' (Just ml) = retStep ml (nextLevel ml)
 
 lineAttributes :: Int -> (Int, Int)
 lineAttributes lineSz = (countTrailingZeros lineSz, lineSz - 1)
@@ -152,8 +167,6 @@ write ad w32 = assert (ad .&. 0x3 == 0) $ do
   let newLine =  cl `V.unsafeUpd` [(i,w32)]
   lat1 <- writeLine l newLine
   return $ lat1 + lat0
-
-type MemoryHierarchyUpdateFun = MemoryLevel -> MemoryHierarchy -> MemoryHierarchy
 
 readLine :: AccessType -> LineIx -> MemoryHierarchyST (MemoryLine, Latency)
 readLine at lnIx = access at (readLineLevel lnIx)
