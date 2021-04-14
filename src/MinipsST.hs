@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module MinipsST (
       module MinipsST
     , AccessType(..)
@@ -5,8 +6,7 @@ module MinipsST (
     , MemoryHierarchy
     , Log
     , Latency
-    , M.ICount
-    , M.rTypeICount, M.iTypeICount, M.jTypeICount
+    , M.ICount(..)
     , M.traceFileHandle
     ) where
 
@@ -46,7 +46,7 @@ makeMinips (txt, ro, dt) memHier
   | length ro > maxRodataSize @W32  = Left $
       printf ".rodata section overlaps with .data. Maximum .rodata size %.2f MB." $
              maxRodataSize @Mebi
-  | otherwise = Right $ M.Minips flushedMemHier regs fpregs (0, 0, 0, 0) 0 Nothing Nothing
+  | otherwise = Right $ M.Minips flushedMemHier regs fpregs (M.ICount 0 0 0 0 0) 0 Nothing Nothing
   where
     mem0     = zip [textAddress,   textAddress   + 4 ..] txt ++
                zip [roDataAddress, roDataAddress + 4 ..] ro  ++
@@ -64,8 +64,8 @@ makeMinips (txt, ro, dt) memHier
       & updateReg Pc pcAddress
     fpregs = IM.fromList (zip (fromEnum <$> [F0 ..]) (repeat 0))
 
-tick :: MinipsST ()
-tick = modify M.tick
+addTicks :: Int -> MinipsST ()
+addTicks !t = modify $ M.addTicks t
 
 getStats :: MinipsST (Int, M.ICount, [(String, AccessStats)])
 getStats = do
@@ -89,11 +89,12 @@ decodeInstruction = state . M.decodeInstruction
 incPC :: MinipsST ()
 incPC = modify M.incPC
 
-incRICount, incIICount, incJICount, incFRCount :: MinipsST ()
+incRICount, incIICount, incJICount, incFRCount, incFICount :: MinipsST ()
 incRICount = modify M.incRICount
 incIICount = modify M.incIICount
 incJICount = modify M.incJICount
 incFRCount = modify M.incFRCount
+incFICount = modify M.incFICount
 
 ----------
 ----------
@@ -140,7 +141,7 @@ fpRegWriteFloat :: FPRegName -> Float -> MinipsST ()
 fpRegWriteFloat reg fl = reg !!< floatToWord fl
 
 fpRegWriteDouble :: FPRegName -> Double -> MinipsST ()
-fpRegWriteDouble reg db = do
+fpRegWriteDouble reg !db = do
   reg !!< lower
   succ reg !!< upper
   where

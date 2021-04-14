@@ -23,6 +23,7 @@ countInstruction RInstr{}  = incRICount
 countInstruction IInstr{}  = incIICount
 countInstruction JInstr{}  = incJICount
 countInstruction FRInstr{} = incFRCount
+countInstruction FIInstr{} = incFICount
 countInstruction Syscall   = incRICount
 
 runInstruction :: InstrWord -> MinipsST Latency
@@ -73,10 +74,10 @@ runInstruction' (RInstr i rs rt rd sa) = do
       rd !< hi
       return 1
     MULT -> do
-      let mult = (fromIntegral rsv :: Int64) * fromIntegral rtv
-      Hi !< (fromIntegral (mult `shiftR` 32) :: Word32)
-      Lo !< (fromIntegral (mult .&. 0xffffffff) :: Word32)
-      return 1
+        let mult = (fromIntegral rsv :: Int64) * fromIntegral rtv
+        Hi !< (fromIntegral (mult `shiftR` 32) :: Word32)
+        Lo !< (fromIntegral (mult .&. 0xffffffff) :: Word32)
+        return 1
     NOR  -> do
       rd !< complement (rsv .|. rtv)
       return 1
@@ -102,7 +103,7 @@ runInstruction' (RInstr i rs rt rd sa) = do
       rd !< rsv - rtv
       return 1
     SUBU -> do
-      rd !< ((fromIntegral rsv  - fromIntegral rsv)  :: Word32)
+      rd !< rsv - rtv
       return 1
     XOR  -> do
       rd !< rsv `xor` rtv
@@ -154,6 +155,12 @@ runInstruction' (IInstr i rs rt im) = do
       (mval, lat) <- memRead Data (rsv + signExtend im)
       rt !<  mval .&. 0xff
       return lat
+    LH -> do
+      (mval, lat) <- memRead Data (rsv + signExtend im)
+      let mval'   = mval .&. 0xffff      :: Word32
+          mvali16 = fromIntegral mval'   :: Int16 -- Sinalizado, 16 bits
+      rt !< (signExtend mvali16 :: Int32)
+      return lat
     LHU -> do
       (mval, lat) <- memRead Data (rsv + signExtend im)
       rt !<  mval .&. 0xffff
@@ -180,7 +187,8 @@ runInstruction' (IInstr i rs rt im) = do
       fpreg !!< mval
       return lat
     ORI -> do
-      rt !< fromIntegral rsv .|. (fromIntegral im :: Word32)
+      let ori = rsv .|. zeroExtend im
+      rt !< ori
       return 1
     SLTI -> do
       rt !< if (fromIntegral rsv :: Int32) < signExtend im
@@ -230,6 +238,11 @@ runInstruction' (FRInstr i ft fs fd) =
       d0 <- fpRegReadDouble fs
       d1 <- fpRegReadDouble ft
       fd `fpRegWriteDouble` (d0 + d1)
+      return 1
+    CLTS  -> do
+      fsv <- fpRegReadFloat fs
+      ftv <- fpRegReadFloat ft
+      Fcc !< (if fsv < ftv then 1 :: Word32 else 0)
       return 1
     CVTDS -> do
       fsv <- fpRegReadFloat fs
@@ -288,10 +301,32 @@ runInstruction' (FRInstr i ft fs fd) =
       ftv <- fpRegReadDouble ft
       fd `fpRegWriteDouble` (fsv * ftv)
       return 1
+    SUBS  -> do
+      fsv <- fpRegReadFloat fs
+      ftv <- fpRegReadFloat ft
+      fd `fpRegWriteFloat` (fsv - ftv)
+      return 1
     _     ->
       error $ "FR-Type Instrucion not implemented: " ++ pshow i
   where
     rt = toEnum (fromEnum ft) :: RegName
+
+runInstruction' (FIInstr i _ im) = do
+  pcv  <- regRead Pc
+  fccv <- regRead Fcc
+  case i of
+    BC1F -> do
+      when (fccv == 0) $ do
+        setBranchDelaySlotAddress $ Just pcv
+        Pc !<  pcv + (signExtend im `shiftL` 2)
+      return 1
+    BC1T -> do
+      when (fccv == 1) $ do
+        setBranchDelaySlotAddress $ Just pcv
+        Pc !<  pcv + (signExtend im `shiftL` 2)
+      return 1
+    _ ->
+      error $ "FI-Type Instrucion not implemented: " ++ pshow i
 
 runInstruction' Syscall = do
   funct <- regRead V0
@@ -351,11 +386,11 @@ runInstruction' Syscall = do
 
 runLoop :: MinipsST (Int, ICount, [(String, AccessStats)])
 runLoop = do
-  tick
   dsa <- getBranchDelaySlotAddress
   pcv <- regRead Pc
   (inst, lat0) <- memRead Instruction (fromMaybe pcv dsa)
   lat1 <- decodeInstruction inst >>= runInstruction
+  addTicks $ lat1 + lat0 - 1 -- decode and execution, in a pipeline should be at the same time thus -1
   ifM (regRead Hlt <&> (== 1))
     finalizeExecution
     runLoop

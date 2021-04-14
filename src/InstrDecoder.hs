@@ -31,20 +31,34 @@ decodeInstruction w =
 
 decodeFType :: Word32 -> InstrWord
 decodeFType w =
-  FRInstr
-    (decodeFType' fmt ft fs fd funct)
-    (w2fpreg ft)
-    (w2fpreg fs)
-    (w2fpreg fd)
+  case fmt of
+    0x08 ->
+      FIInstr (decodeFIType fmt ft im)
+        (w2fpreg ft)
+        im
+    _    ->
+      FRInstr
+        (decodeFRType fmt ft fs fd funct)
+        (w2fpreg ft)
+        (w2fpreg fs)
+        (w2fpreg fd)
   where
     fmt   = getFmt w
     ft    = getFt w
     fs    = getFs w
     fd    = getFd w
     funct = getFunct w
+    im    = getImmediate w
 
-decodeFType' ::  Word8 ->  Word8 -> Word8 -> Word8 -> Word8 -> Instr
-decodeFType' fmt ft _ fd funct
+decodeFIType ::  Word8 ->  Word8 -> Int16 -> Instr
+decodeFIType _fmt ft _imm =
+  case ft of
+    0x00 -> BC1F
+    0x01 -> BC1T
+    _ -> error "Instrução tipo FI não reconhecida 1."
+
+decodeFRType ::  Word8 ->  Word8 -> Word8 -> Word8 -> Word8 -> Instr
+decodeFRType fmt ft _ fd funct
   | funct == 0x00 =
     case fmt of
       0x10 -> ADDS
@@ -53,38 +67,46 @@ decodeFType' fmt ft _ fd funct
                 case fmt of
                   0x00 -> MFC1
                   0x04 -> MTC1
-                  _    -> error "Instrução tipo FR não reconhecida 3."
+                  _    -> error "Instrução tipo FR não reconhecida 1."
               else
-                error $ "Instrução tipo FR não reconhecida 4. (" ++ show fmt ++ ")"
+                error $ "Instrução tipo FR não reconhecida 2. (" ++ show fmt ++ ")"
+  | funct == 0x01 = case fmt of
+      0x10 -> SUBS
+      _    -> error $ "Instrução tipo FR não reconhecida 6. Fmt: 0x" ++ showHex32 (fromIntegral fmt)
   | funct == 0x02 =
     case fmt of
       0x10 -> MULS
       0x11 -> MULD
-      _    -> error "Instrução tipo FR não reconhecida 0."
+      _    -> error "Instrução tipo FR não reconhecida 3."
   | funct == 0x03 =
     case fmt of
       0x10 -> DIVS
       0x11 -> DIVD
-      _    -> error "Instrução tipo FR não reconhecida 8."
+      _    -> error "Instrução tipo FR não reconhecida 4."
 
   | funct == 0x06 =
     case fmt of
         0x10 -> MOVS
         0x11 -> MOVD
-        _    -> error "Instrução tipo FR não reconhecida 1."
+        _    -> error "Instrução tipo FR não reconhecida 5."
   | funct == 0x20 =
     if ft == 0x00 then
       case fmt of
         0x11 -> CVTSD
         0x14 -> CVTSW
-        _    -> error $ "Instrução tipo FR não reconhecida 5. Fmt: 0x" ++ showHex32 (fromIntegral fmt)
+        _    -> error $ "Instrução tipo FR não reconhecida 7. Fmt: 0x" ++ showHex32 (fromIntegral fmt)
     else
-      error "Instrução tipo FR não reconhecida 6."
+      error "Instrução tipo FR não reconhecida 8."
   | funct == 0x21 = case fmt of
         0x10 -> CVTDS
         0x14 -> CVTDW
-        _    -> error $ "Instrução tipo FR não reconhecida 2. (" ++ show fmt ++ ")"
-  | otherwise = error $ "Instrução tipo FR não reconhecida 7. Funct: 0x" ++ showHex32 (fromIntegral funct)
+        _    -> error $ "Instrução tipo FR não reconhecida 9. (" ++ show fmt ++ ")"
+  | funct == 0x3c = case fmt of
+        0x10 -> CLTS
+        _    -> error "Instrução tipo FR não reconhecida 10."
+  | otherwise = error $ "Instrução tipo FR não reconhecida 11." ++
+    " Funct: 0x" ++ showHex32 (fromIntegral funct) ++
+    " Fmt: 0x" ++ showHex32 (fromIntegral fmt)
 
 
 decodeRType :: Word32 -> InstrWord
@@ -149,6 +171,7 @@ decodeIType w =
       0x05 -> BNE
       0x20 -> LB
       0x24 -> LBU
+      0x21 -> LH
       0x25 -> LHU
       0x0f -> LUI
       0x23 -> LW

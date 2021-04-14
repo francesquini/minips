@@ -36,6 +36,7 @@ data RegName =
   | Pc
   | Hlt
   | Hi | Lo
+  | Fcc
   deriving (Eq, Enum, Show)
 
 data FPRegName =
@@ -87,6 +88,7 @@ data Instr =
   | BNE
   | LB
   | LBU
+  | LH
   | LHU
   | LUI
   | LW
@@ -105,6 +107,7 @@ data Instr =
   -- FR-type
   | ADDS
   | ADDD
+  | CLTS
   | CVTDS
   | CVTDW
   | CVTSW
@@ -117,11 +120,16 @@ data Instr =
   | MTC1
   | MULS
   | MULD
+  | SUBS
+  -- FI-type
+  | BC1F
+  | BC1T
   deriving (Show)
 
 mnemonic :: Instr -> String
 mnemonic ADDS  = "add.s"
 mnemonic ADDD  = "add.d"
+mnemonic CLTS  = "c.lt.s"
 mnemonic CVTDS = "cvt.d.s"
 mnemonic CVTDW = "cvt.d.w"
 mnemonic CVTSW = "cvt.s.w"
@@ -132,6 +140,7 @@ mnemonic MOVS  = "mov.s"
 mnemonic MOVD  = "mov.d"
 mnemonic MULS  = "mul.s"
 mnemonic MULD  = "mul.d"
+mnemonic SUBS  = "sub.s"
 mnemonic i     =  map toLower $ show i
 
 type Shamt = Word8
@@ -141,6 +150,7 @@ data InstrWord where
   IInstr  :: Instr -> RegName -> RegName -> Int16            -> InstrWord
   JInstr  :: Instr -> Word32                                 -> InstrWord
   FRInstr :: Instr -> FPRegName -> FPRegName -> FPRegName    -> InstrWord
+  FIInstr :: Instr -> FPRegName -> Int16                     -> InstrWord
   Syscall ::                                                    InstrWord
 
 --------------------------
@@ -189,7 +199,12 @@ data ShowIntrType =
   -- FR-Type
   | IFdFsFt
   | IFdFs
+  | IFsFt
   | IRtFs
+  -- FI-Type
+  | IWx
+  -- Unknown
+  | Unknown
 
 rswhex :: PShow a => a -> Int16 -> String
 rswhex rs w =
@@ -222,7 +237,9 @@ sBoxLst (IInstr  i rs rt w)     IRtRsW   = [bxi i, Bx rt, Bx rs, Bx w]
 sBoxLst (IInstr  i _  rt w)     IRtW     = [bxi i, Bx rt, Bx w]
 sBoxLst (FRInstr i ft fs fd)    IFdFsFt  = [bxi i, Bx fd, Bx fs, Bx ft]
 sBoxLst (FRInstr i _  fs fd)    IFdFs    = [bxi i, Bx fd, Bx fs]
+sBoxLst (FRInstr i ft fs _)     IFsFt    = [bxi i, Bx fs, Bx ft]
 sBoxLst (FRInstr i ft fs _ )    IRtFs    = [bxi i, Bx $ rtreg ft, Bx fs]
+sBoxLst (FIInstr i _  w)        IWx      = [bxi i, Bx w]
 sBoxLst ins                     Special  =
   case ins of
     (RInstr SLL Zero Zero Zero 0)        -> [Bx "nop"]
@@ -249,16 +266,18 @@ showBox ins@(RInstr i rs rt rd sa) =
     _     -> IRdRsRt
 showBox ins@(IInstr i _ _ _) =
   sBoxLst ins $ case i of
-    LB   -> IRtRsx
-    LBU  -> IRtRsx
-    LUI  -> IRtW
-    LW   -> IRtRsx
-    LWC1 -> IRtfpRsx
-    LDC1 -> IRtfpRsx
     BEQ  -> IRsRtW
     BGEZ -> IRsW
     BLEZ -> IRsW
     BNE  -> IRsRtW
+    LB   -> IRtRsx
+    LBU  -> IRtRsx
+    LDC1 -> IRtfpRsx
+    LH   -> IRtRsx
+    LHU  -> IRtRsx
+    LUI  -> IRtW
+    LW   -> IRtRsx
+    LWC1 -> IRtfpRsx
     SB   -> IRsRtW
     SH   -> IRsRtW
     SW   -> IRtRsx
@@ -267,6 +286,7 @@ showBox ins@(IInstr i _ _ _) =
 showBox (JInstr i w) = [bxi i, Bx $ "0x" <> showHex w " # 0x" <> showHex (w `shiftL` 2) ""]
 showBox ins@(FRInstr i _ _ _) =
   sBoxLst ins $ case i of
+    CLTS  -> IFsFt
     CVTDS -> IFdFs
     CVTDW -> IFdFs
     CVTSW -> IFdFs
@@ -276,6 +296,11 @@ showBox ins@(FRInstr i _ _ _) =
     MFC1  -> IRtFs
     MTC1  -> IRtFs
     _ -> IFdFsFt
+showBox ins@(FIInstr i _ _) =
+  sBoxLst ins $ case i of
+    BC1F -> IWx
+    BC1T -> IWx
+    _    -> Unknown
 showBox Syscall =  sBoxLst Syscall Special
 
 instance Show InstrWord where

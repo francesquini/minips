@@ -19,7 +19,7 @@ import MinipsST
 import Text.Read (readMaybe)
 import qualified MemoryConfig as MC
 import System.Random
-import MemoryHierarchy (AccessStats)
+import MemoryHierarchy
 
 readWordFun :: Endianness -> Get Word32
 readWordFun Big = getWord32be
@@ -86,24 +86,24 @@ usage = putStrLn . unlines $ [
   , "| 5    | 1      | Split     | 512/cada    | 4 vias | 32         | LRU       |"
   , "|------|--------|-----------|-------------|--------|------------|-----------|"
   , "| 6    | 2      | Split     | L1 512/cada | 4 vias | 64         | LRU       |"
-  , "|      |        | Unificada | L2 4096     | 8 vias | 64         | LRU       |"
+  , "|      |        | Unificada | L2 2048     | 8 vias | 64         | LRU       |"
   , "|------|--------|-----------|-------------|--------|------------|-----------|"
   , ""
-  , "* Padrão se não especificado"
+  , "*  Padrão se não especificado"
+  , "** Latências (ciclos): L1 1, L2 10, RAM 100"
   ]
 
 
-
 printReport :: (Int, ICount, [(String, AccessStats)]) -> UTCTime -> UTCTime -> IO ()
-printReport (c, (r, i, j, fr), cacheStats) t0 t1 =
+printReport (c, ICount r i j fr fi, cacheStats) t0 t1 =
   mapM_ glog report
   where
-    totIns = r + i + j + fr
+    totIns = r + i + j + fr + fi
     diffTime = fromRational $ toRational $ nominalDiffTimeToSeconds (diffUTCTime t1 t0) :: Double
     report = concat [header, monocycle, multicycle, footer, caches]
     header = [
         "--------------------------"
-      , printf "Instruction count: %d (R: %d I: %d J: %d FR: %d)" totIns r i j fr
+      , printf "Instruction count: %d (R: %d I: %d J: %d FR: %d FI %d)" totIns r i j fr fi
       , printf "Simulation Time: %.2f sec." diffTime
       , printf "Average IPS: %.2f" (fromIntegral totIns / diffTime)
       ]
@@ -127,15 +127,15 @@ printReport (c, (r, i, j, fr), cacheStats) t0 t1 =
       , printf "\tIPC: %.2f" (fromIntegral totIns / fromIntegral (c + 4) :: Double)
       , printf "\tMIPS: %.2f" (fromIntegral totIns / timeMulti /  (siMultiplier @Mega) :: Double)
       ]
-    formatCacheReport (l, (h, m)) =
+    formatCacheReport (l, AccessStats h m) =
       let soma = h + m
-          missRate = fromIntegral m / fromIntegral soma :: Float in
-        printf "%s\t\t%d\t\t%d\t\t%d\t\t%.2f" l h m soma missRate
+          missRate = fromIntegral m / fromIntegral soma * 100 :: Float in
+        printf "%5s  %12d  %12d  %12d  %9.2f%%" l h m soma missRate
     caches = [
         "\n\nMemory Information"
       , "------------------"
-      , "Level\t\tHits\t\tMisses\t\tTotal\t\tMiss Rate"
-      , "-----\t\t----\t\t------\t\t-----\t\t---------"] ++
+      , "Level  Hits          Misses        Total          Miss Rate"
+      , "-----  ------------  ------------  ------------   --------- "] ++
       map formatCacheReport cacheStats
     footer = [printf "Speedup Monocycle/Pipeline: %.2fx" (timeMono/timeMulti)]
 

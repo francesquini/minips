@@ -1,3 +1,5 @@
+{-# LANGUAGE BangPatterns #-}
+
 module MemoryHierarchy
   (   MemoryHierarchy(..)
     , lineAttributes
@@ -15,7 +17,7 @@ module MemoryHierarchy
     , Log
     , read
     , write
-    , AccessStats
+    , AccessStats(..)
     , resetMHStats
     , getMHStats
     , Latency
@@ -67,7 +69,7 @@ execMemoryHierarchyST f = snd . fst . runMemoryHierarchyST f
 type MemoryHierarchyUpdateFun = MemoryLevel -> MemoryHierarchy -> MemoryHierarchy
 
 onMemoryLevelRun :: MemoryLevelST b -> MemoryHierarchyUpdateFun -> MemoryLevel -> MemoryHierarchyST b
-onMemoryLevelRun runner updater s = do
+onMemoryLevelRun runner updater !s = do
   let ((ret, s'), log0) = runMemoryLevelST runner s
   traceST $ fmap ("\t"   <>) log0
   modify $ updater s'
@@ -167,11 +169,16 @@ write :: Address -> Word32 -> MemoryHierarchyST Latency
 write ad w32 = assert (ad .&. 0x3 == 0) $ do
   traceAccess Data Write ad
   (l, i) <- lineAndIx ad
-  (cl, lat0) <- readLine Data l
-  let newLine =  cl `V.unsafeUpd` [(i,w32)]
-  lat1 <- writeLine l newLine
+  lat1 <- writeLine l (lineUpdateFun i)
   invalidateILine l
-  return $ lat1 + lat0
+  return lat1
+  -- (cl, lat0) <- readLine Data l
+  -- let newLine =  cl `V.unsafeUpd` [(i,w32)]
+  -- lat1 <- writeLine l newLine
+  -- invalidateILine l
+  -- return lat1 + lat0
+  where
+    lineUpdateFun pos mline = V.unsafeUpd mline [(pos, w32)]
 
 readLine :: AccessType -> LineIx -> MemoryHierarchyST (MemoryLine, Latency)
 readLine at@Data lnIx =
@@ -181,8 +188,8 @@ readLine at@Instruction lnIx = do
   mdc <- gets $ \mh -> if isSplitCache mh then Just (dataMem mh) else Nothing
   access at $ readLineLevel lnIx mdc
 
-writeLine :: LineIx -> MemoryLine -> MemoryHierarchyST Latency
-writeLine lnIx val = access Data (writeLineLevel lnIx val)
+writeLine :: LineIx -> (MemoryLine -> MemoryLine) -> MemoryHierarchyST Latency
+writeLine lnIx updtF = access Data (writeLineLevel lnIx updtF)
 
 invalidateILine :: LineIx -> MemoryHierarchyST ()
 invalidateILine lnIx = do

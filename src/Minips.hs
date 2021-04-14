@@ -7,31 +7,32 @@ import qualified InstrDecoder as D
 import MemoryHierarchy
 import Utils
 
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IM
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IM
 import Data.Word
 
 import System.IO
 
-type ICount = (Int, Int, Int, Int)
-rTypeICount, iTypeICount, jTypeICount, frTypeICount :: ICount -> Int
-rTypeICount  = fst4
-iTypeICount  = snd4
-jTypeICount  = trd4
-frTypeICount = fth4
+data  ICount = ICount {
+    rTypeICount  :: !Int
+  , iTypeICount  :: !Int
+  , jTypeICount  :: !Int
+  , frTypeICount :: !Int
+  , fiTypeICount :: !Int
+  }
 
 data Minips = Minips {
     memory          :: MemoryHierarchy
   , registers       :: IntMap Word32
   , fpRegisters     :: IntMap Word32
-  , iCount          :: ICount
-  , cycles          :: Int
+  , iCount          :: !ICount
+  , cycles          :: !Int
   , delaySlotAddr   :: Maybe Word32
   , traceFileHandle :: Maybe Handle
   }
 
-tick :: Minips -> Minips
-tick m@Minips{cycles = c} = m{cycles = c + 1}
+addTicks :: Int -> Minips -> Minips
+addTicks ticks m@Minips{cycles = c} = m{cycles = c + ticks}
 
 regRead :: RegName -> Minips -> Word32
 regRead regName st =
@@ -79,11 +80,12 @@ decodeInstruction w m = (D.decodeInstruction w, m)
 incPC :: Minips -> Minips
 incPC st = regWrite Pc (regRead Pc st + 4) st
 
-incRICount, incIICount, incJICount, incFRCount :: Minips -> Minips
-incRICount m@Minips{iCount=c} = m{iCount = map1 (+1) c}
-incIICount m@Minips{iCount=c} = m{iCount = map2 (+1) c}
-incJICount m@Minips{iCount=c} = m{iCount = map3 (+1) c}
-incFRCount m@Minips{iCount=c} = m{iCount = map4 (+1) c}
+incRICount, incIICount, incJICount, incFRCount, incFICount :: Minips -> Minips
+incRICount m@Minips{iCount=c} = m{iCount = c{rTypeICount=rTypeICount c + 1}}
+incIICount m@Minips{iCount=c} = m{iCount = c{iTypeICount=iTypeICount c + 1}}
+incJICount m@Minips{iCount=c} = m{iCount = c{jTypeICount=jTypeICount c + 1}}
+incFRCount m@Minips{iCount=c} = m{iCount = c{frTypeICount=frTypeICount c + 1}}
+incFICount m@Minips{iCount=c} = m{iCount = c{fiTypeICount=fiTypeICount c + 1}}
 
 getMemStats :: Minips -> [(String, AccessStats)]
 getMemStats st = fst . fst $ runMemoryHierarchyST getMHStats (memory st)

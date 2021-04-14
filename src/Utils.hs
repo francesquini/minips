@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Utils (
     module Utils
   , N.showHex
@@ -52,10 +53,10 @@ words32FromDouble db =
     dbl = fromIntegral $ db0 .&. 0xffffffff
 
 doubleFromWords32 :: Word32 -> Word32 -> Double
-doubleFromWords32 up low =
+doubleFromWords32 !up !low =
   wordToDouble $ (w64up `shiftL` 32) .|. w64low
   where
-    w64up  = fromIntegral up :: Word64
+    w64up  = fromIntegral up  :: Word64
     w64low = fromIntegral low :: Word64
 
 showHex32 :: Word32 -> String

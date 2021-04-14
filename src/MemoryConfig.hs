@@ -153,7 +153,7 @@ conf6 tl _ =
     l2  = mkCache
       "L2"
       10
-      4096
+      2048
       lnSz
       8
       ram
