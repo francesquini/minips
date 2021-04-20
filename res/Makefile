@@ -10,12 +10,13 @@ ARTIFACTS := 13.arit.data 13.arit.text 13.arit.rodata 13.arit.elf \
 			 20.blocking_dgemm.data 20.blocking_dgemm.text 20.blocking_dgemm.rodata 20.blocking_dgemm.elf \
 			 21.mandelbrot.data 21.mandelbrot.text 21.mandelbrot.rodata 21.mandelbrot.elf
 
+
 # - arquitetura mips e com símbolos de debug
 # - com otimizações para acelerar a execução
 # - standalone, estático, sem código relocalizável, ...
 # - sem exceções de FP e evita promoção de float->double
 # - Warnings completos e tratados como erros
-CFLAGS := -mips1 -g \
+CFLAGS := -mips1 -mfp32 -g \
 		  -O2 -fno-lto \
 		  -nostdlib -mno-shared -ffreestanding -static -fno-pie -fno-pic -fno-toplevel-reorder \
 		  -mno-fp-exceptions -Wdouble-promotion \
@@ -27,7 +28,7 @@ C_NATIVE_FLAGS := -g -O2 -Wall
 	${CC_NATIVE} ${C_NATIVE_FLAGS} $^ -c -o $@.native
 
 %.elf: %.o
-	${CC} ${CFLAGS} -T linker_script.ld $^ -o $@
+	${CC} ${CFLAGS} -T linker_script.ld -Wl,--build-id=none $^ -o $@
 	${CC_NATIVE} ${C_NATIVE_FLAGS} $^.native -o $@.native
 
 %.text: %.elf

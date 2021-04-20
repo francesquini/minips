@@ -1,3 +1,7 @@
+/*
+ * Emilio Francesquini <e.francesquini@ufabc.edu.br> 04/2021
+ */
+
 #ifndef __MINIPS
 #define __MINIPS
 
