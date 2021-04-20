@@ -181,12 +181,14 @@ write ad w32 = assert (ad .&. 0x3 == 0) $ do
     lineUpdateFun pos mline = V.unsafeUpd mline [(pos, w32)]
 
 readLine :: AccessType -> LineIx -> MemoryHierarchyST (MemoryLine, Latency)
-readLine at@Data lnIx =
-  -- Icache is read only, so, go directly to the next level if miss
-  access at (readLineLevel lnIx Nothing)
+readLine at@Data lnIx = do
+  -- Icache is read only, so, we could go directly to the next level if miss
+  -- However, if it is in the cache it is faster to get it from there
+  mdc <- gets $ \mh -> if isSplitCache mh then Just (instructionMem mh) else Nothing
+  access at $ readLineLevel lnIx mdc False
 readLine at@Instruction lnIx = do
   mdc <- gets $ \mh -> if isSplitCache mh then Just (dataMem mh) else Nothing
-  access at $ readLineLevel lnIx mdc
+  access at $ readLineLevel lnIx mdc False
 
 writeLine :: LineIx -> (MemoryLine -> MemoryLine) -> MemoryHierarchyST Latency
 writeLine lnIx updtF = access Data (writeLineLevel lnIx updtF)

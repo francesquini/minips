@@ -312,11 +312,13 @@ cacheReplaceLine lineIx (setIndex, newTag) memLine dirty = do
     True
   gets $ (+ lat0) . latency
 
-readLineLevel :: LineIx -> Maybe MemoryLevel -> MemoryLevelST (MemoryLine, Latency)
-readLineLevel lnIx mml = do
-  cacheTick
+-- Line to be read, sister mem. level, recurring call (if recurring does not log/count accesses)
+readLineLevel :: LineIx -> Maybe MemoryLevel -> Bool -> MemoryLevelST (MemoryLine, Latency)
+readLineLevel lnIx mml recur = do
+  unless recur $ do
+    cacheTick
+    logMemActivity $ "read line# 0x" <> showHex32 (fromIntegral lnIx)
   ml <- get
-  logMemActivity $ "read line# 0x" <> showHex32 (fromIntegral lnIx)
   case ml of
     RAM{}   -> readLineLevelRAM ml
     Cache{} -> readLineLevelCache
@@ -324,7 +326,7 @@ readLineLevel lnIx mml = do
 
     readLineLevelRAM :: MemoryLevel -> MemoryLevelST (MemoryLine, Latency)
     readLineLevelRAM ml = do
-      scoreHit -- Always a hit in RAM
+      unless recur scoreHit -- Always a hit in RAM
       let mLine = IM.findWithDefault (rZeros ml) lnIx (rMem ml)
       gets $ \s -> (mLine, latency s)
 
@@ -345,11 +347,12 @@ readLineLevel lnIx mml = do
 
     readLineLevelCacheMiss :: (SetIndex, Tag) -> MemoryLevelST (MemoryLine, Latency)
     readLineLevelCacheMiss indexAndTag = do
-      scoreMiss -- it is a miss..
+      unless recur scoreMiss -- it is a miss..
       -- now, if it's an I-cache needs to search on sister
       case mml of
         Nothing -> do -- No sister, perform a regular read next level
-          (mLine, lat0) <- cacheNextLevelRun $ readLineLevel lnIx Nothing
+          -- not recurring since it is on the next level
+          (mLine, lat0) <- cacheNextLevelRun $ readLineLevel lnIx Nothing False
           lat1 <- cacheReplaceLine lnIx indexAndTag mLine False
           return (mLine, lat0 + lat1)
         Just sister -> do
@@ -357,7 +360,7 @@ readLineLevel lnIx mml = do
               mSisterLine = cacheSearch sisterIndexAndTag sister
           case mSisterLine of
             Nothing -> -- then, it is not on the sister. Perform a regular Access
-              readLineLevel lnIx Nothing
+              readLineLevel lnIx Nothing True
             (Just (_, mline)) -> do -- sister has it! replace my line and continue
               -- notice that sister cache does not get an update in access times!!
               lat <- cacheReplaceLine lnIx sisterIndexAndTag mline False
@@ -382,7 +385,8 @@ writeLineLevel lnIx updateLine = do
         Nothing -> do -- Cache miss on write
           scoreMiss
           -- perform a read on the next level
-          (memline0, lat0) <- cacheNextLevelRun $ readLineLevel lnIx Nothing
+          -- not recurring since it is on the next level
+          (memline0, lat0) <- cacheNextLevelRun $ readLineLevel lnIx Nothing False
           let memline = updateLine memline0
           lat1 <- cacheReplaceLine lnIx indexAndTag memline True
           return $ lat0 + lat1
