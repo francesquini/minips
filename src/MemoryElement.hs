@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module MemoryElement (
     Latency
   , LineIx
@@ -68,13 +69,7 @@ ceMatches :: Tag -> CacheEntry -> Bool
 ceMatches tag0 (CacheEntry vl _ tag1 _ _ _) = vl && tag0 == tag1
 
 -- -- set way/cacheEntry
-newtype Set = Set (Vector CacheEntry)
-
-instance Semigroup Set where
-  (Set s1) <> (Set s2) = Set $ s1 <> s2
-
-instance Monoid Set where
-  mempty = Set mempty
+newtype Set = Set (Vector CacheEntry) deriving (Semigroup, Monoid)
 
 type ReplacementPolicy = SetIndex -> MemoryLevelST Int -- set index -> way number
 type ReplacementPolicyFactory = MemoryLevel -> ReplacementPolicy
@@ -417,11 +412,3 @@ invalidateLineLevel lnIx = do
 nextLevel :: MemoryLevel ->  Maybe MemoryLevel
 nextLevel Cache{cNextLevel=l} = Just l
 nextLevel RAM{} = Nothing
-
--- Direct mapping
--- Fully associative
--- N-Way Set Associative
-
--- Replacement Policy
--- LRU
--- Random
