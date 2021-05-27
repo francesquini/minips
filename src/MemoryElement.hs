@@ -289,7 +289,8 @@ cacheUpdateLine lineIx (setIndex, tag) wayNb memLine = do
 
 cacheReplaceLine :: LineIx -> (SetIndex, Tag) -> MemoryLine -> Bool -> MemoryLevelST Latency
 cacheReplaceLine lineIx (setIndex, newTag) memLine dirty = do
-  logMemActivity $ "Replace to include line# 0x" <> showHex32 (fromIntegral lineIx)
+  logMemActivity $ "Replace to include line# 0x" <> showHex32 (fromIntegral lineIx) <>
+                   " Set: " <> show setIndex
   wayNb  <- gets cReplacementPolicy >>$ setIndex
 
   Set oldSet <- gets cSets <&> (`V.unsafeIndex` setIndex)
@@ -358,6 +359,7 @@ readLineLevel lnIx mml recur = do
               readLineLevel lnIx Nothing True
             (Just (_, mline)) -> do -- sister has it! replace my line and continue
               -- notice that sister cache does not get an update in access times!!
+              logMemActivity $ "Line found on " <> description sister
               lat <- cacheReplaceLine lnIx sisterIndexAndTag mline False
               return (mline, lat)
 

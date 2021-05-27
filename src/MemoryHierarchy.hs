@@ -58,6 +58,12 @@ isSplitCache :: MemoryHierarchy -> Bool
 isSplitCache Unified{} = False
 isSplitCache Split{}   = True
 
+sisterCache :: AccessType -> MemoryHierarchy -> Maybe MemoryLevel
+sisterCache _           Unified{}  = Nothing
+sisterCache Data        ml@Split{} = Just $ instructionMem ml
+sisterCache Instruction ml@Split{} = Just $ dataMem ml
+{-# INLINABLE sisterCache #-}
+
 type MemoryHierarchyST = StateT MemoryHierarchy (Writer Log)
 
 runMemoryHierarchyST :: MemoryHierarchyST a -> MemoryHierarchy -> MemoryAccessResponse (a, MemoryHierarchy)
@@ -172,23 +178,15 @@ write ad w32 = assert (ad .&. 0x3 == 0) $ do
   lat1 <- writeLine l (lineUpdateFun i)
   invalidateILine l
   return lat1
-  -- (cl, lat0) <- readLine Data l
-  -- let newLine =  cl `V.unsafeUpd` [(i,w32)]
-  -- lat1 <- writeLine l newLine
-  -- invalidateILine l
-  -- return lat1 + lat0
   where
     lineUpdateFun pos mline = V.unsafeUpd mline [(pos, w32)]
 
 readLine :: AccessType -> LineIx -> MemoryHierarchyST (MemoryLine, Latency)
-readLine at@Data lnIx = do
+readLine at lnIx = do
   -- Icache is read only, so, we could go directly to the next level if miss
   -- However, if it is in the cache it is faster to get it from there
-  mdc <- gets $ \mh -> if isSplitCache mh then Just (instructionMem mh) else Nothing
-  access at $ readLineLevel lnIx mdc False
-readLine at@Instruction lnIx = do
-  mdc <- gets $ \mh -> if isSplitCache mh then Just (dataMem mh) else Nothing
-  access at $ readLineLevel lnIx mdc False
+  msl <- gets $ sisterCache at
+  access at $ readLineLevel lnIx msl False
 
 writeLine :: LineIx -> (MemoryLine -> MemoryLine) -> MemoryHierarchyST Latency
 writeLine lnIx updtF = access Data (writeLineLevel lnIx updtF)

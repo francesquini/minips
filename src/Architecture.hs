@@ -107,6 +107,11 @@ data Instr =
   -- FR-type
   | ADDS
   | ADDD
+  | CEQD
+  | CEQS
+  | CLED
+  | CLES
+  | CLTD
   | CLTS
   | CVTDS
   | CVTDW
@@ -129,6 +134,11 @@ data Instr =
 mnemonic :: Instr -> String
 mnemonic ADDS  = "add.s"
 mnemonic ADDD  = "add.d"
+mnemonic CEQD  = "c.eq.d"
+mnemonic CEQS  = "c.eq.s"
+mnemonic CLED  = "c.le.d"
+mnemonic CLES  = "c.le.s"
+mnemonic CLTD  = "c.lt.d"
 mnemonic CLTS  = "c.lt.s"
 mnemonic CVTDS = "cvt.d.s"
 mnemonic CVTDW = "cvt.d.w"
@@ -286,6 +296,11 @@ showBox ins@(IInstr i _ _ _) =
 showBox (JInstr i w) = [bxi i, Bx $ "0x" <> showHex w " # 0x" <> showHex (w `shiftL` 2) ""]
 showBox ins@(FRInstr i _ _ _) =
   sBoxLst ins $ case i of
+    CEQD  -> IFsFt
+    CEQS  -> IFsFt
+    CLED  -> IFsFt
+    CLES  -> IFsFt
+    CLTD  -> IFsFt
     CLTS  -> IFsFt
     CVTDS -> IFdFs
     CVTDW -> IFdFs

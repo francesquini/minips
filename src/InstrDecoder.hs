@@ -38,7 +38,7 @@ decodeFType w =
         im
     _    ->
       FRInstr
-        (decodeFRType fmt ft fs fd funct)
+        (decodeFRType (fmt, ft, fs, fd, funct))
         (w2fpreg ft)
         (w2fpreg fs)
         (w2fpreg fd)
@@ -56,58 +56,34 @@ decodeFIType _fmt ft _imm =
     0x00 -> BC1F
     0x01 -> BC1T
     _ -> error "Instrução tipo FI não reconhecida 1."
-
-decodeFRType ::  Word8 ->  Word8 -> Word8 -> Word8 -> Word8 -> Instr
-decodeFRType fmt ft _ fd funct
-  | funct == 0x00 =
-    case fmt of
-      0x10 -> ADDS
-      0x11 -> ADDD
-      _    -> if fd == 0x00 then
-                case fmt of
-                  0x00 -> MFC1
-                  0x04 -> MTC1
-                  _    -> error "Instrução tipo FR não reconhecida 1."
-              else
-                error $ "Instrução tipo FR não reconhecida 2. (" ++ show fmt ++ ")"
-  | funct == 0x01 = case fmt of
-      0x10 -> SUBS
-      _    -> error $ "Instrução tipo FR não reconhecida 6. Fmt: 0x" ++ showHex32 (fromIntegral fmt)
-  | funct == 0x02 =
-    case fmt of
-      0x10 -> MULS
-      0x11 -> MULD
-      _    -> error "Instrução tipo FR não reconhecida 3."
-  | funct == 0x03 =
-    case fmt of
-      0x10 -> DIVS
-      0x11 -> DIVD
-      _    -> error "Instrução tipo FR não reconhecida 4."
-
-  | funct == 0x06 =
-    case fmt of
-        0x10 -> MOVS
-        0x11 -> MOVD
-        _    -> error "Instrução tipo FR não reconhecida 5."
-  | funct == 0x20 =
-    if ft == 0x00 then
-      case fmt of
-        0x11 -> CVTSD
-        0x14 -> CVTSW
-        _    -> error $ "Instrução tipo FR não reconhecida 7. Fmt: 0x" ++ showHex32 (fromIntegral fmt)
-    else
-      error "Instrução tipo FR não reconhecida 8."
-  | funct == 0x21 = case fmt of
-        0x10 -> CVTDS
-        0x14 -> CVTDW
-        _    -> error $ "Instrução tipo FR não reconhecida 9. (" ++ show fmt ++ ")"
-  | funct == 0x3c = case fmt of
-        0x10 -> CLTS
-        _    -> error "Instrução tipo FR não reconhecida 10."
-  | otherwise = error $ "Instrução tipo FR não reconhecida 11." ++
-    " Funct: 0x" ++ showHex32 (fromIntegral funct) ++
-    " Fmt: 0x" ++ showHex32 (fromIntegral fmt)
-
+               -- fmt     ft     fs     fd     funct
+decodeFRType ::  (Word8, Word8, Word8, Word8, Word8) -> Instr
+decodeFRType fields = -- fmt ft _ fd funct
+  case fields of
+    (0x10, _,    _, _,    0x00) -> ADDS
+    (0x11, _,    _, _,    0x00) -> ADDD
+    (0x00, _,    _, 0x00, 0x00) -> MFC1
+    (0x04, _,    _, 0x00, 0x00) -> MTC1
+    (0x10, _,    _, _,    0x01) -> SUBS
+    (0x10, _,    _, _,    0x02) -> MULS
+    (0x11, _,    _, _,    0x02) -> MULD
+    (0x10, _,    _, _,    0x03) -> DIVS
+    (0x11, _,    _, _,    0x03) -> DIVD
+    (0x10, _,    _, _,    0x06) -> MOVS
+    (0x11, _,    _, _,    0x06) -> MOVD
+    (0x11, 0x00, _, _,    0x20) -> CVTSD
+    (0x14, 0x00, _, _,    0x20) -> CVTSW
+    (0x10, _,    _, _,    0x21) -> CVTDS
+    (0x14, _,    _, _,    0x21) -> CVTDW
+    (0x10, _,    _, 0x00, 0x32) -> CEQS -- Apenas aceita CC 0 (codificado em fd)
+    (0x11, _,    _, 0x00, 0x32) -> CEQD -- Apenas aceita CC 0 (codificado em fd)
+    (0x10, _,    _, 0x00, 0x3c) -> CLTS -- Apenas aceita CC 0 (codificado em fd)
+    (0x11, _,    _, 0x00, 0x3c) -> CLTD -- Apenas aceita CC 0 (codificado em fd)
+    (0x10, _,    _, 0x00, 0x3e) -> CLES -- Apenas aceita CC 0 (codificado em fd)
+    (0x11, _,    _, 0x00, 0x3e) -> CLED -- Apenas aceita CC 0 (codificado em fd)
+    _                           -> unknownFR
+  where
+    unknownFR = error $ "Unknown FR-Type Instruction: " <> show fields
 
 decodeRType :: Word32 -> InstrWord
 decodeRType w =

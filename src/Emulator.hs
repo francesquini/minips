@@ -390,7 +390,7 @@ runLoop = do
   pcv <- regRead Pc
   (inst, lat0) <- memRead Instruction (fromMaybe pcv dsa)
   lat1 <- decodeInstruction inst >>= runInstruction
-  addTicks $ lat1 + lat0 -- decode and execution, in a pipeline should be at the same time thus -1
+  addTicks $ lat1 + lat0
   ifM (regRead Hlt <&> (== 1))
     finalizeExecution
     runLoop
